@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint, typecheck, build, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm run format:check
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Build
+        run: pnpm run build
+        env:
+          # The site build bakes in the tenant's brand and canonical origin, so
+          # a build needs to know which workspace it is for. CI builds the
+          # reference tenant; a release pipeline sets the client's slug.
+          BOS_WORKSPACE_SLUG: nuesheba
+
+      - name: Test
+        run: pnpm run test
+
+  migrations:
+    name: Migrations apply cleanly
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bos
+          POSTGRES_PASSWORD: bos
+          POSTGRES_DB: bos_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations to a clean database
+        run: pnpm run db:migrate
+        env:
+          DATABASE_URL: postgresql://bos:bos@localhost:5432/bos_ci
+
+      - name: Verify tenant isolation against the real database
+        run: pnpm --filter @bos/database run test
+        env:
+          DATABASE_URL: postgresql://bos:bos@localhost:5432/bos_ci
+
+      - name: Fail if the Drizzle schema has ungenerated changes
+        run: |
+          pnpm run db:generate
+          if ! git diff --exit-code -- packages/database/drizzle; then
+            echo "::error::Drizzle schema changed without a committed migration. Run pnpm db:generate."
+            exit 1
+          fi

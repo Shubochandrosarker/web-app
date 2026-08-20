@@ -1,0 +1,36 @@
+{
+  "slug": "nuesheba",
+  "businessType": "education_service",
+  "siteUrl": "https://nuesheba.com",
+  "brand": {
+    "name": "NuESheba",
+    "tagline": "National University certificate and transcript assistance",
+    "primaryColor": "#1a56db"
+  },
+  "nap": {
+    "legalName": "NuESheba",
+    "displayName": "NuESheba",
+    "streetAddress": "National University Gate",
+    "addressLocality": "Gazipur",
+    "addressRegion": "Dhaka Division",
+    "addressCountry": "BD",
+    "telephone": "+8801700000000",
+    "whatsapp": "+8801700000000",
+    "email": "hello@nuesheba.com",
+    "openingHours": ["Sa-Th 09:00-18:00"],
+    "areaServed": ["Bangladesh"],
+    "sameAs": []
+  },
+  "locale": {
+    "defaultLocale": "en",
+    "supportedLocales": ["en", "bn-BD"],
+    "timeZone": "Asia/Dhaka",
+    "currency": "BDT"
+  },
+  "modules": ["ops.documents", "comms.whatsapp", "reputation.local_seo"],
+  "disabledModules": [],
+  "features": {
+    "documentUpload": true,
+    "whatsappAcknowledgement": true
+  }
+}

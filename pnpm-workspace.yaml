@@ -1,0 +1,12 @@
+packages:
+  # configs/ holds tenant JSON, not packages — deliberately not a workspace.
+  - 'apps/*'
+  - 'packages/*'
+
+# pnpm 10 blocks lifecycle scripts unless a dependency is allow-listed here.
+# Keep this list minimal and justified — every entry runs arbitrary code at install time.
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - unrs-resolver
+  - '@tailwindcss/oxide'
