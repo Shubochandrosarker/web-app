@@ -1,0 +1,48 @@
+name = "bos-edge"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ---------------------------------------------------------------------------
+# What runs at the edge, and what deliberately does not.
+#
+# Here: work that is latency-sensitive or spiky — analytics ingestion, webhook
+# receipt, cache purging, scheduled jobs. All of it is short, stateless and
+# tolerant of running far from the database.
+#
+# Not here: the business API. It needs transactions, row-level security and a
+# warm connection pool, and it is not on a latency-critical path. Moving it to
+# Workers would trade a real database session for Hyperdrive plus a lot of
+# careful reasoning about connection reuse, and buy nothing a user would feel.
+# See docs/architecture/08-deployment-topology.md.
+# ---------------------------------------------------------------------------
+
+[observability]
+enabled = true
+
+[[queues.producers]]
+queue = "bos-events"
+binding = "EVENT_QUEUE"
+
+[[queues.consumers]]
+queue = "bos-events"
+max_batch_size = 25
+max_batch_timeout = 10
+max_retries = 5
+# Failures are parked rather than dropped: a poisoned message must be
+# inspectable, not silently retried into oblivion.
+dead_letter_queue = "bos-events-dlq"
+
+[[r2_buckets]]
+binding = "PUBLIC_ASSETS"
+bucket_name = "bos-assets"
+
+# Nightly: refresh analytics rollups and sweep documents past their retention.
+[triggers]
+crons = ["17 2 * * *"]
+
+[vars]
+ENVIRONMENT = "development"
+
+# Secrets — set with `wrangler secret put`, never in this file:
+#   API_BASE_URL, EDGE_SHARED_SECRET, INDEXNOW_KEY

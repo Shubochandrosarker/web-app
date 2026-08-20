@@ -1,0 +1,30 @@
+{
+  "name": "@bos/site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bos/business-types": "workspace:*",
+    "@bos/config": "workspace:*",
+    "@bos/content": "workspace:*",
+    "@bos/sections": "workspace:*",
+    "@bos/seo": "workspace:*",
+    "@bos/validation": "workspace:*",
+    "next": "^16.3.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,89 @@
+/*
+ * Placeholder tokens only.
+ *
+ * The design system is Phase 2 (TASK-206) and will generate these from the
+ * brand's tokens in the workspace config. What matters at this stage is the
+ * shape: colours and spacing are custom properties, so a second client is a
+ * different set of values rather than a different stylesheet.
+ */
+:root {
+  --color-text: #16181d;
+  --color-muted: #5a6072;
+  --color-surface: #ffffff;
+  --color-accent: #1a56db;
+  --space-md: 1rem;
+  --space-lg: 2rem;
+  --measure: 68ch;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-text: #e8eaf0;
+    --color-muted: #9aa1b4;
+    --color-surface: #0f1116;
+    --color-accent: #7aa2ff;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  line-height: 1.6;
+}
+
+main {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: var(--space-lg) var(--space-md);
+}
+
+/* Visible on focus only — a keyboard user's first stop, invisible to everyone else. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+}
+
+.skip-link:focus {
+  left: var(--space-md);
+  top: var(--space-md);
+  padding: var(--space-md);
+  background: var(--color-surface);
+  z-index: 10;
+}
+
+.button {
+  display: inline-block;
+  padding: 0.6rem 1.2rem;
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.button--primary {
+  background: var(--color-accent);
+  color: var(--color-surface);
+}
+
+.hero-answer {
+  font-size: 1.15rem;
+  font-weight: 500;
+}
+
+.section-description,
+.process-step-duration {
+  color: var(--color-muted);
+}
+
+.site-footer {
+  max-width: var(--measure);
+  margin: var(--space-lg) auto;
+  padding: var(--space-lg) var(--space-md);
+  border-top: 1px solid var(--color-muted);
+}
