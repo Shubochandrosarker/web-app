@@ -14,8 +14,8 @@ import {
   webPageNode,
   webSiteNode,
 } from '@bos/seo';
-import { SectionList } from '@/components/sections';
-import { getContentProvider } from '@/lib/content';
+import { SectionList, type RenderContext } from '@/components/sections';
+import { getPageByPath } from '@/lib/content';
 import { getWorkspace } from '@/lib/workspace';
 
 /**
@@ -24,14 +24,13 @@ import { getWorkspace } from '@/lib/workspace';
  * Every public page — home, service, post, location, landing page — is this
  * component. Templates do not fork per content type; the section document
  * decides what renders, and the entry's type decides which JSON-LD nodes the
- * graph gets. Adding a content type therefore costs a schema entry, not a
- * new route.
+ * graph gets. Adding a content type therefore costs a schema entry, not a new
+ * route.
  *
- * `force-dynamic` is a Phase 1 placeholder. TASK-204 switches this to ISR with
- * tag-based revalidation, so a publish purges exactly the affected pages
- * rather than the whole zone.
+ * The page renders per request and reads cached data — see `lib/content.ts`
+ * for why that is the right trade against the nonce-based CSP, and ADR-0014
+ * for the decision record.
  */
-export const dynamic = 'force-dynamic';
 
 interface RouteParams {
   params: Promise<{ slug?: string[] }>;
@@ -62,14 +61,18 @@ function breadcrumbsFor(path: string, title: string) {
 export async function generateMetadata({ params }: RouteParams): Promise<Metadata> {
   const workspace = await getWorkspace();
   const { slug } = await params;
-  const entry = await getContentProvider().getByPath(
-    pathFrom(slug),
-    workspace.locale.defaultLocale,
-  );
+  const entry = await getPageByPath(pathFrom(slug), workspace.locale.defaultLocale);
 
   if (!entry) return { title: 'Not found', robots: { index: false, follow: false } };
 
   const meta = buildPageMetadata({ entry, workspace });
+
+  /*
+   * A staging deployment must never be indexable, and `robots.txt` alone is
+   * not enough: a URL that is already known can be indexed without the crawler
+   * re-reading robots. The per-page directive is the one that actually holds.
+   */
+  const indexable = process.env.BOS_ALLOW_INDEXING === 'true';
 
   return {
     title: meta.title,
@@ -80,7 +83,9 @@ export async function generateMetadata({ params }: RouteParams): Promise<Metadat
         ? { languages: Object.fromEntries(meta.alternates.map((a) => [a.hrefLang, a.href])) }
         : {}),
     },
-    robots: { index: meta.robots.index, follow: meta.robots.follow },
+    robots: indexable
+      ? { index: meta.robots.index, follow: meta.robots.follow }
+      : { index: false, follow: false },
     openGraph: {
       title: meta.openGraph.title,
       ...(meta.openGraph.description ? { description: meta.openGraph.description } : {}),
@@ -103,7 +108,15 @@ export default async function ContentPage({ params }: RouteParams) {
   const { slug } = await params;
   const path = pathFrom(slug);
 
-  const entry = await getContentProvider().getByPath(path, workspace.locale.defaultLocale);
+  const entry = await getPageByPath(path, workspace.locale.defaultLocale);
+
+  /*
+   * The provider already filters to published content — the public API has no
+   * way to express a request for anything else. This check is the second lock:
+   * a future provider (a Markdown folder, a WordPress instance) has no such
+   * guarantee, and a draft rendering because somebody swapped the provider
+   * would be a silent failure.
+   */
   if (!entry || entry.status !== 'published') notFound();
 
   // A malformed section costs that section, not the page. The parse result
@@ -128,6 +141,10 @@ export default async function ContentPage({ params }: RouteParams) {
     .flatMap((section) => section.props.items);
 
   const isArticle = entry.type === 'post' || entry.type === 'guide' || entry.type === 'case_study';
+
+  // LocalBusiness is emitted only where an address is actually on the page.
+  // Claiming a physical presence on a page that shows none is the mismatch
+  // that gets a whole site's structured data discounted.
   const showsAddress =
     sections.some((section) => section.type === 'locations') || entry.type === 'location';
 
@@ -144,13 +161,26 @@ export default async function ContentPage({ params }: RouteParams) {
     faqNode(visibleFaqItems, entry, workspace),
   ]);
 
+  const renderContext: RenderContext = {
+    references: entry.references,
+    workspaceSlug: workspace.slug,
+    locale: workspace.locale.defaultLocale,
+    currency: workspace.locale.currency,
+  };
+
   return (
     <>
+      {/*
+        eslint-disable no-restricted-syntax -- `serialiseJsonLd` escapes `<`,
+        so a `</script>` inside any string value cannot close this block. See
+        packages/seo/src/structured-data.ts.
+      */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serialiseJsonLd(graph) }}
       />
-      <SectionList sections={sections} />
+      {/* eslint-enable no-restricted-syntax */}
+      <SectionList sections={sections} context={renderContext} />
     </>
   );
 }

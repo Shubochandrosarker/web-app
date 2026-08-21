@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { pageDocumentSchema } from '@bos/sections';
 import { localeCode, routePath, slug, url } from '@bos/validation';
+import { EMPTY_REFERENCES, sectionReferencesSchema } from './references.ts';
 
 /**
  * The content model the renderer sees.
@@ -56,10 +57,22 @@ export const contentEntrySchema = z.object({
   fields: z.record(z.string(), z.unknown()).default({}),
   /** Translations of this entry, keyed by locale. */
   translations: z.record(z.string(), z.uuid()).default({}),
+  /**
+   * Everything the page's sections refer to by id, resolved server-side.
+   *
+   * Optional because the Markdown provider has no service catalogue to resolve
+   * against; renderers treat an absent bag as an empty one rather than
+   * branching on the provider.
+   */
+  references: sectionReferencesSchema.default(EMPTY_REFERENCES),
 });
 
 export type ContentEntry = z.infer<typeof contentEntrySchema>;
 export type SeoFields = z.infer<typeof seoFieldsSchema>;
+
+/** Fields a public caller may sort by. Anything else is a 400. */
+export const CONTENT_SORT_FIELDS = ['publishedAt', 'updatedAt', 'title'] as const;
+export type ContentSortField = (typeof CONTENT_SORT_FIELDS)[number];
 
 export interface ContentQuery {
   readonly type?: ContentType;
@@ -67,6 +80,8 @@ export interface ContentQuery {
   readonly status?: ContentEntry['status'];
   readonly limit?: number;
   readonly cursor?: string;
+  readonly sort?: ContentSortField;
+  readonly direction?: 'asc' | 'desc';
   /** Filter on type-specific fields, e.g. `{ locationId: '…' }`. */
   readonly where?: Readonly<Record<string, string | number | boolean>>;
 }

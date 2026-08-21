@@ -13,9 +13,11 @@
   },
   "dependencies": {
     "@bos/validation": "workspace:*",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@bos/sanitize": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@types/node": "^22.10.0"
   }
 }

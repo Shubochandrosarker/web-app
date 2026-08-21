@@ -7,24 +7,40 @@
     "dev": "node --experimental-strip-types --watch src/server.ts",
     "build": "node build.mjs",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "provision": "node --experimental-strip-types scripts/provision.ts",
+    "test": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1115.0",
+    "@aws-sdk/s3-request-presigner": "^3.1115.0",
     "@bos/automation": "workspace:*",
     "@bos/business-types": "workspace:*",
     "@bos/config": "workspace:*",
     "@bos/content": "workspace:*",
     "@bos/database": "workspace:*",
     "@bos/events": "workspace:*",
+    "@bos/sanitize": "workspace:*",
     "@bos/sections": "workspace:*",
+    "@bos/seo": "workspace:*",
     "@bos/validation": "workspace:*",
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/helmet": "^13.1.1",
+    "@fastify/multipart": "^10.1.1",
+    "@fastify/rate-limit": "^11.2.0",
+    "@node-rs/argon2": "^2.1.0",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.12.1",
+    "file-type": "^22.0.2",
+    "ioredis": "^6.0.0",
+    "nodemailer": "^9.0.5",
     "pg": "^8.23.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/nodemailer": "^8.0.1",
     "esbuild": "^0.28.2",
     "typescript": "5.9.3"
   }

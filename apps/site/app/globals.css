@@ -1,49 +1,122 @@
 /*
- * Placeholder tokens only.
+ * The public site's stylesheet.
  *
- * The design system is Phase 2 (TASK-206) and will generate these from the
- * brand's tokens in the workspace config. What matters at this stage is the
- * shape: colours and spacing are custom properties, so a second client is a
- * different set of values rather than a different stylesheet.
+ * Every colour, space and radius here is a custom property defined by
+ * `lib/tokens.ts` from the tenant's brand configuration. Nothing in this file
+ * contains a brand colour, which is the property that makes a second client a
+ * different config rather than a forked stylesheet.
+ *
+ * There is no CSS framework and no runtime style library. The public site's
+ * JavaScript budget is a ranking-adjacent concern; a styling approach that
+ * ships a kilobyte of runtime to produce class names spends that budget on
+ * nothing a visitor can see.
  */
-:root {
-  --color-text: #16181d;
-  --color-muted: #5a6072;
-  --color-surface: #ffffff;
-  --color-accent: #1a56db;
-  --space-md: 1rem;
-  --space-lg: 2rem;
-  --measure: 68ch;
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-text: #e8eaf0;
-    --color-muted: #9aa1b4;
-    --color-surface: #0f1116;
-    --color-accent: #7aa2ff;
-  }
-}
-
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   color: var(--color-text);
   background: var(--color-surface);
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  line-height: 1.6;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  /* Keeps a long Bengali or English word from forcing a horizontal scrollbar. */
+  overflow-wrap: break-word;
 }
 
-main {
-  max-width: var(--measure);
+h1,
+h2,
+h3,
+h4 {
+  line-height: var(--line-height-tight);
+  margin: 0 0 var(--space-sm);
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--font-size-3xl);
+}
+h2 {
+  font-size: var(--font-size-2xl);
+}
+h3 {
+  font-size: var(--font-size-xl);
+}
+
+p {
+  margin: 0 0 var(--space-md);
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--color-accent-strong);
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* A visible focus ring on everything focusable, in one rule rather than
+   twenty. Removing outlines is the most common accessibility regression in a
+   design system, so it is easier here to keep them than to remove them. */
+:where(a, button, input, select, textarea, summary, details):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ------------------------------------------------------------------ layout */
+
+.section-inner {
+  max-width: var(--container-width);
   margin: 0 auto;
-  padding: var(--space-lg) var(--space-md);
+  padding-inline: var(--space-md);
 }
 
-/* Visible on focus only — a keyboard user's first stop, invisible to everyone else. */
+main > div > section {
+  padding-block: var(--space-xl);
+}
+
+.section-heading {
+  max-width: var(--measure);
+  margin-bottom: var(--space-lg);
+}
+
+.section-eyebrow {
+  margin: 0 0 var(--space-2xs);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-accent-strong);
+}
+
+.section-description,
+.section-note,
+.card-meta,
+.process-step-duration,
+.muted {
+  color: var(--color-text-muted);
+}
+
+.section-empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* Visible on focus only — a keyboard user's first stop, invisible to everyone
+   else. `left: -9999px` rather than `display: none`, which would take it out
+   of the focus order entirely and defeat the purpose. */
 .skip-link {
   position: absolute;
   left: -9999px;
@@ -52,38 +125,750 @@ main {
 .skip-link:focus {
   left: var(--space-md);
   top: var(--space-md);
-  padding: var(--space-md);
+  z-index: 20;
+  padding: var(--space-sm) var(--space-md);
   background: var(--color-surface);
-  z-index: 10;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius-md);
 }
 
+/* Available to a screen reader, absent from the page. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ------------------------------------------------------------------ header */
+
+.site-header {
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.site-header-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding-block: var(--space-sm);
+}
+
+.site-brand {
+  font-weight: 700;
+  font-size: var(--font-size-lg);
+  color: var(--color-text);
+  text-decoration: none;
+  margin-right: auto;
+}
+
+.site-nav {
+  display: none;
+  gap: var(--space-lg);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-nav a {
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.site-nav a:hover {
+  text-decoration: underline;
+}
+
+.site-nav-mobile summary {
+  cursor: pointer;
+  list-style: none;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.site-nav-mobile summary::-webkit-details-marker {
+  display: none;
+}
+
+.site-nav-mobile ul {
+  position: absolute;
+  z-index: 10;
+  margin-top: var(--space-xs);
+  padding: var(--space-sm);
+  list-style: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.site-header-actions {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+@media (min-width: 48rem) {
+  .site-nav {
+    display: flex;
+  }
+  .site-nav-mobile {
+    display: none;
+  }
+}
+
+/* ----------------------------------------------------------------- buttons */
+
 .button {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 44px minimum touch target: below it, a tap on a phone misses often enough
+     to lose conversions on exactly the audience this site serves. */
+  min-height: 2.75rem;
   padding: 0.6rem 1.2rem;
   border: 1px solid var(--color-accent);
-  border-radius: 6px;
-  color: var(--color-accent);
+  border-radius: var(--radius-md);
+  color: var(--color-accent-strong);
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
   text-decoration: none;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--color-accent-soft);
 }
 
 .button--primary {
   background: var(--color-accent);
-  color: var(--color-surface);
+  color: var(--color-on-accent);
 }
 
+.button--primary:hover {
+  background: var(--color-accent-strong);
+  border-color: var(--color-accent-strong);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* -------------------------------------------------------------------- hero */
+
+.hero {
+  padding-block: var(--space-2xl) var(--space-xl);
+  background: linear-gradient(180deg, var(--color-accent-soft), var(--color-surface));
+}
+
+.hero-inner {
+  display: grid;
+  gap: var(--space-xl);
+  align-items: center;
+}
+
+.hero-copy {
+  max-width: var(--measure);
+}
+
+.hero-eyebrow {
+  margin: 0 0 var(--space-xs);
+  font-weight: 600;
+  color: var(--color-accent-strong);
+}
+
+/* The direct answer, immediately under the H1. Larger than body text because
+   it is the thing a visitor in a hurry should read. */
 .hero-answer {
-  font-size: 1.15rem;
+  font-size: var(--font-size-lg);
   font-weight: 500;
 }
 
-.section-description,
-.process-step-duration {
-  color: var(--color-muted);
+.hero-description {
+  color: var(--color-text-muted);
 }
 
-.site-footer {
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.hero-media img {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+@media (min-width: 60rem) {
+  .hero-inner:has(.hero-media) {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ------------------------------------------------------------------- cards */
+
+.card-grid {
+  display: grid;
+  gap: var(--space-lg);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  /* `auto-fit` with a minimum means one breakpoint rule covers every column
+     count, and a narrow screen reflows without a media query per variant. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+}
+
+.card-grid--2 {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+}
+
+.card {
+  padding: var(--space-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.card--highlighted {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-md);
+}
+
+.card h3 {
+  margin-top: 0;
+}
+
+.card h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.card h3 a:hover {
+  text-decoration: underline;
+}
+
+.card p:last-child {
+  margin-bottom: 0;
+}
+
+.card-icon {
+  display: block;
+  font-size: var(--font-size-2xl);
+  margin-bottom: var(--space-xs);
+}
+
+.card-price,
+.price {
+  font-size: var(--font-size-lg);
+}
+
+/* ------------------------------------------------------------------- prose */
+
+.prose .section-inner {
   max-width: var(--measure);
-  margin: var(--space-lg) auto;
-  padding: var(--space-lg) var(--space-md);
-  border-top: 1px solid var(--color-muted);
+}
+
+.prose--narrow .section-inner {
+  max-width: 56ch;
+}
+
+.prose h2,
+.prose h3 {
+  margin-top: var(--space-lg);
+}
+
+.prose ul,
+.prose ol {
+  padding-left: var(--space-lg);
+}
+
+.prose li {
+  margin-bottom: var(--space-xs);
+}
+
+.prose blockquote {
+  margin: var(--space-lg) 0;
+  padding-left: var(--space-md);
+  border-left: 3px solid var(--color-accent-border);
+  color: var(--color-text-muted);
+}
+
+/* Tables scroll inside their own container rather than widening the page. */
+.prose table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.prose th,
+.prose td {
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.prose th {
+  background: var(--color-surface-raised);
+}
+
+.prose figure {
+  margin: var(--space-lg) 0;
+}
+
+.prose figcaption {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+/* --------------------------------------------------------------------- FAQ */
+
+.faq-list {
+  max-width: var(--measure);
+  border-top: 1px solid var(--color-border);
+}
+
+.faq-item {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.faq-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq-item summary h3 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+/* The disclosure triangle, drawn rather than imported. */
+.faq-item summary::after {
+  content: '+';
+  flex: none;
+  font-size: var(--font-size-xl);
+  color: var(--color-accent-strong);
+}
+
+.faq-item[open] summary::after {
+  content: '−';
+}
+
+.faq-answer {
+  padding-bottom: var(--space-md);
+  max-width: var(--measure);
+}
+
+/* ----------------------------------------------------------------- process */
+
+.process-steps {
+  display: grid;
+  gap: var(--space-lg);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.process-steps > li {
+  counter-increment: step;
+  padding-left: var(--space-xl);
+  position: relative;
+}
+
+/* The number comes from the list, so inserting a step in the middle cannot
+   leave "1, 2, 2, 4". */
+.process-steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------------------- stats */
+
+.stats-grid {
+  display: grid;
+  gap: var(--space-lg);
+  margin: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+}
+
+.stat dt {
+  order: 2;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.stat dd {
+  order: 1;
+  margin: 0;
+  font-size: var(--font-size-3xl);
+  font-weight: 700;
+  color: var(--color-accent-strong);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ------------------------------------------------ testimonials and reviews */
+
+.testimonial figure,
+.review {
+  margin: 0;
+}
+
+.testimonial blockquote {
+  margin: 0 0 var(--space-md);
+  font-size: var(--font-size-lg);
+}
+
+.testimonial figcaption {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.avatar,
+.person-photo {
+  border-radius: var(--radius-pill);
+  object-fit: cover;
+}
+
+.avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.person-photo {
+  width: 5rem;
+  height: 5rem;
+  margin-bottom: var(--space-sm);
+}
+
+.review-rating {
+  margin-bottom: var(--space-xs);
+  color: var(--color-warning);
+  font-size: var(--font-size-lg);
+}
+
+/* ----------------------------------------------------------------- pricing */
+
+.tick-list {
+  list-style: none;
+  margin: 0 0 var(--space-md);
+  padding: 0;
+}
+
+.tick-list li {
+  padding-left: var(--space-lg);
+  position: relative;
+  margin-bottom: var(--space-2xs);
+}
+
+.tick-list li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--color-success);
+  font-weight: 700;
+}
+
+/* --------------------------------------------------------------- locations */
+
+address {
+  font-style: normal;
+  margin-bottom: var(--space-md);
+}
+
+.opening-hours {
+  list-style: none;
+  margin: 0 0 var(--space-md);
+  padding: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* --------------------------------------------------------- gallery / logos */
+
+.gallery-items {
+  display: grid;
+  gap: var(--space-md);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+}
+
+.gallery-items img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+}
+
+/* A scroll-snapping row rather than a JavaScript slider: it swipes on a phone,
+   scrolls with a trackpad and works with the keyboard, with no script. */
+.gallery--carousel .gallery-items {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+}
+
+.gallery--carousel .gallery-items > li {
+  flex: 0 0 min(80%, 22rem);
+  scroll-snap-align: start;
+}
+
+.gallery--masonry .gallery-items img {
+  aspect-ratio: auto;
+}
+
+.logo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xl);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.logo-row img {
+  max-height: 2.5rem;
+  width: auto;
+  /* Desaturated so a wall of brand colours does not compete with the page's
+     own. Removed on hover so the logo is legible when someone looks at it. */
+  filter: grayscale(1);
+  opacity: 0.75;
+}
+
+.logo-row img:hover {
+  filter: none;
+  opacity: 1;
+}
+
+/* --------------------------------------------------------------------- CTA */
+
+.cta--strong {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.cta--strong .section-eyebrow,
+.cta--strong .section-description {
+  color: inherit;
+  opacity: 0.9;
+}
+
+.cta--strong .button {
+  border-color: var(--color-on-accent);
+  color: var(--color-on-accent);
+}
+
+.cta--strong .button--primary {
+  background: var(--color-on-accent);
+  color: var(--color-accent-strong);
+}
+
+.cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+/* -------------------------------------------------------------------- form */
+
+.form-section .section-inner {
+  max-width: 44rem;
+}
+
+.lead-form {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.field {
+  display: grid;
+  gap: var(--space-2xs);
+}
+
+.field label {
+  font-weight: 600;
+}
+
+.field input,
+.field select,
+.field textarea {
+  padding: 0.65rem var(--space-sm);
+  /* 16px, so iOS does not zoom the viewport when the field is focused. */
+  font-size: 1rem;
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  min-height: 2.75rem;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: var(--color-accent);
+}
+
+.field input[aria-invalid='true'],
+.field textarea[aria-invalid='true'],
+.field select[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.field--checkbox label,
+.field--checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  font-weight: 400;
+}
+
+.field--checkbox input {
+  min-height: auto;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-top: 0.2rem;
+  flex: none;
+}
+
+.field-help {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+/* Colour is never the only signal: the message is text, and it is associated
+   with the field through `aria-describedby`. */
+.field-error {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.required {
+  color: var(--color-danger);
+}
+
+.form-error {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-danger-soft);
+  border-left: 3px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+}
+
+.form-success {
+  padding: var(--space-lg);
+  background: var(--color-success-soft);
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-lg);
+}
+
+.form-success h3 {
+  margin-top: 0;
+  color: var(--color-success);
+}
+
+/* Off-screen rather than `display: none`: some bots skip hidden fields, and a
+   honeypot a bot skips is a honeypot that catches nothing. */
+.honeypot {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------------ footer */
+
+.site-footer {
+  margin-top: var(--space-2xl);
+  padding-top: var(--space-xl);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+
+.site-footer-inner {
+  display: grid;
+  gap: var(--space-xl);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  padding-bottom: var(--space-lg);
+}
+
+.site-footer-heading {
+  font-size: var(--font-size-base);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.site-footer-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-footer-legal {
+  padding-block: var(--space-md);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.site-footer-disclaimer {
+  max-width: var(--measure);
+  margin: 0;
+}
+
+/* --------------------------------------------------------------- reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

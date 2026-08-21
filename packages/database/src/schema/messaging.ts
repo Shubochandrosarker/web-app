@@ -14,7 +14,7 @@ import {
 import { primaryKeyColumn, softDelete, timestamps } from './_shared.ts';
 import { messageChannel, messageStatus } from './enums.ts';
 import { workspaces } from './identity.ts';
-import { contacts } from './crm.ts';
+import { contacts, leads } from './crm.ts';
 
 /**
  * Messaging.
@@ -113,6 +113,14 @@ export const messages = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     contactId: uuid('contact_id').references(() => contacts.id, { onDelete: 'set null' }),
+    /**
+     * The enquiry this message belongs to, when there is one.
+     *
+     * Denormalised alongside `contact_id` because the question staff actually
+     * ask is "what has been sent about *this* request", and a contact with two
+     * enquiries cannot answer it.
+     */
+    leadId: uuid('lead_id').references(() => leads.id, { onDelete: 'set null' }),
     channel: messageChannel('channel').notNull(),
     status: messageStatus('status').notNull().default('queued'),
     templateId: uuid('template_id').references(() => messageTemplates.id, { onDelete: 'set null' }),
@@ -139,6 +147,7 @@ export const messages = pgTable(
   (table) => [
     uniqueIndex('messages_workspace_idempotency_key').on(table.workspaceId, table.idempotencyKey),
     index('messages_contact_created_idx').on(table.contactId, table.createdAt),
+    index('messages_lead_created_idx').on(table.leadId, table.createdAt),
     index('messages_workspace_status_idx').on(table.workspaceId, table.status),
     index('messages_provider_message_idx').on(table.providerMessageId),
     index('messages_campaign_idx').on(table.campaignId),
