@@ -12,6 +12,9 @@ const config: NextConfig = {
    * mean every chart library an admin screen pulls in has to be code-split
    * away from a landing page — a fight you lose slowly. Two builds, two
    * budgets, no fight.
+   *
+   * The Content Security Policy lives in `proxy.ts`, because it carries a
+   * per-response nonce. What is here is everything that does not.
    */
   async headers() {
     return [
@@ -23,10 +26,17 @@ const config: NextConfig = {
           { key: 'Referrer-Policy', value: 'same-origin' },
           // An authenticated surface must never be cached by a shared proxy.
           { key: 'Cache-Control', value: 'no-store' },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
+          },
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
         ],
       },
     ];
   },
+
+  typescript: { ignoreBuildErrors: false },
 };
 
 export default config;

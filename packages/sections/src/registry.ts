@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { safeHref } from '@bos/sanitize/url';
 
 /**
  * The section registry — the contract behind the schema-driven page builder.
@@ -35,10 +36,18 @@ export const SECTION_TYPES = [
 
 export type SectionType = (typeof SECTION_TYPES)[number];
 
-/** A link that may point inside the site or out of it. */
+/**
+ * A link that may point inside the site or out of it.
+ *
+ * `href` is `safeHref`, not `z.string()`. A section document is written by an
+ * editor and can also arrive from a WordPress import, so "the link field
+ * accepts any string" means `javascript:` reaches an anchor tag in a
+ * server-rendered page. The scheme allow-list lives in @bos/sanitize so the
+ * API, the site and the Worker cannot disagree about it.
+ */
 const linkSchema = z.object({
   label: z.string().min(1).max(120),
-  href: z.string().min(1).max(2048),
+  href: safeHref,
   /** Rendered as a secondary action when false. */
   primary: z.boolean().default(false),
 });
@@ -80,8 +89,15 @@ export const sectionPropSchemas = {
 
   content: z
     .object({
-      /** Sanitised HTML produced by the editor, never raw user input. */
-      html: z.string(),
+      /**
+       * Sanitised HTML.
+       *
+       * The guarantee is enforced at the write boundary by
+       * `sanitizePageDocument` in the CMS API, not here: sanitising on every
+       * read would be a second, drifting definition of "safe" and would put
+       * an HTML parser on the render path of every page.
+       */
+      html: z.string().max(200_000),
       layout: z.enum(['prose', 'two-column', 'narrow']).default('prose'),
     })
     .strict(),
@@ -92,6 +108,7 @@ export const sectionPropSchemas = {
       serviceIds: z.array(z.uuid()).default([]),
       columns: z.union([z.literal(2), z.literal(3), z.literal(4)]).default(3),
       showPricing: z.boolean().default(false),
+      limit: z.number().int().min(1).max(24).default(12),
     })
     .strict(),
 
@@ -148,7 +165,12 @@ export const sectionPropSchemas = {
 
   reviews: headingSchema
     .extend({
-      /** Pulled from the reputation module; never hand-written. */
+      /**
+       * Pulled from the reputation module; never hand-written. There is no
+       * field here for a rating or a review body, which is the point: a
+       * testimonial someone typed into the CMS must not be able to become
+       * Review structured data.
+       */
       source: z.enum(['internal', 'google']).default('internal'),
       limit: z.number().int().min(1).max(24).default(6),
       minRating: z.number().min(1).max(5).default(4),
@@ -177,6 +199,7 @@ export const sectionPropSchemas = {
               .optional(),
             period: z.string().max(60).optional(),
             features: z.array(z.string().max(240)).default([]),
+            highlighted: z.boolean().default(false),
             link: linkSchema.optional(),
           }),
         )
@@ -214,6 +237,7 @@ export const sectionPropSchemas = {
     .extend({
       /** Empty means "everyone marked public" in the people collection. */
       personIds: z.array(z.uuid()).default([]),
+      limit: z.number().int().min(1).max(24).default(12),
     })
     .strict(),
 
@@ -329,4 +353,96 @@ export function parsePageDocument(document: PageDocument): {
 
 export function isSectionType(value: string): value is SectionType {
   return (SECTION_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * Ids a document asks the server to resolve, grouped by kind.
+ *
+ * The renderer needs a service's price and a location's address, and neither
+ * is in the section props — only an id is. Collecting the ids up front lets
+ * the API resolve them in one pass per page instead of the renderer issuing a
+ * query per section, which is the shape that turns a service page into
+ * fourteen round trips.
+ */
+export interface SectionReferenceRequest {
+  readonly serviceIds: readonly string[];
+  readonly personIds: readonly string[];
+  readonly locationIds: readonly string[];
+  readonly contentEntryIds: readonly string[];
+  readonly mediaIds: readonly string[];
+  readonly formIds: readonly string[];
+  /** True when a `reviews` section is present and reviews must be loaded. */
+  readonly wantsReviews: boolean;
+  /** True when a `service-grid` with no explicit ids needs the full catalogue. */
+  readonly wantsAllServices: boolean;
+  readonly wantsAllPeople: boolean;
+  readonly wantsAllLocations: boolean;
+}
+
+export function collectSectionReferences(
+  sections: readonly ParsedSection[],
+): SectionReferenceRequest {
+  const serviceIds = new Set<string>();
+  const personIds = new Set<string>();
+  const locationIds = new Set<string>();
+  const contentEntryIds = new Set<string>();
+  const mediaIds = new Set<string>();
+  const formIds = new Set<string>();
+  let wantsReviews = false;
+  let wantsAllServices = false;
+  let wantsAllPeople = false;
+  let wantsAllLocations = false;
+
+  for (const section of sections) {
+    switch (section.type) {
+      case 'hero':
+        if (section.props.media) mediaIds.add(section.props.media.mediaId);
+        break;
+      case 'service-grid':
+        if (section.props.serviceIds.length === 0) wantsAllServices = true;
+        else for (const id of section.props.serviceIds) serviceIds.add(id);
+        break;
+      case 'team':
+        if (section.props.personIds.length === 0) wantsAllPeople = true;
+        else for (const id of section.props.personIds) personIds.add(id);
+        break;
+      case 'locations':
+        if (section.props.locationIds.length === 0) wantsAllLocations = true;
+        else for (const id of section.props.locationIds) locationIds.add(id);
+        break;
+      case 'related-content':
+        for (const id of section.props.contentEntryIds) contentEntryIds.add(id);
+        break;
+      case 'gallery':
+      case 'logos':
+        for (const item of section.props.items) mediaIds.add(item.mediaId);
+        break;
+      case 'testimonials':
+        for (const item of section.props.items) {
+          if (item.media) mediaIds.add(item.media.mediaId);
+        }
+        break;
+      case 'form':
+        formIds.add(section.props.formId);
+        break;
+      case 'reviews':
+        wantsReviews = true;
+        break;
+      default:
+        break;
+    }
+  }
+
+  return {
+    serviceIds: [...serviceIds],
+    personIds: [...personIds],
+    locationIds: [...locationIds],
+    contentEntryIds: [...contentEntryIds],
+    mediaIds: [...mediaIds],
+    formIds: [...formIds],
+    wantsReviews,
+    wantsAllServices,
+    wantsAllPeople,
+    wantsAllLocations,
+  };
 }

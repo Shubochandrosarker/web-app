@@ -259,3 +259,102 @@ A route that was never mounted has none of those properties.
 
 **Cost.** The route table depends on tenant state, so "what endpoints exist?"
 is answered per workspace. Integration tests must mount modules explicitly.
+
+---
+
+## ADR-0014 — The public site renders per request from cached data
+
+**Supersedes the caching half of ADR-0007.** The topology is unchanged; what
+the site caches is not.
+
+**Decision.** Public pages render on every request. What is cached is the
+_content data_ behind them — tagged per path, revalidated on publish — rather
+than the rendered HTML.
+
+**Why.** The site sends a nonce-based Content Security Policy, and a nonce must
+differ per response. A statically generated or full-page-cached document
+carries whichever nonce it was generated with, so serving it to every visitor
+makes the policy decorative: an injected inline script would carry the same
+nonce as the legitimate ones.
+
+The obvious alternative — full static generation with `script-src 'unsafe-inline'`
+— is a strictly worse trade. Inline script is the thing a CSP exists to stop,
+and the page is fast either way: with the content already in memory, a render
+is sub-millisecond work. The 200ms was always the round trip to the API, and
+that is what the tag-based cache removes.
+
+**Why not `unsafe-inline` with hashes.** Hashes work for a fixed set of inline
+scripts. Next's hydration payload differs per page and per build, so the hash
+set would have to be computed at build time for every route and would break on
+any change to the data — which is every publish.
+
+**Cost.** The origin does work on every request rather than serving a file.
+That work is a React render with no I/O, and the CDN still absorbs static
+assets. A publish invalidates one page's data rather than purging the zone, so
+the cost of an edit is one page's worth of cache, not the whole site's.
+
+---
+
+## ADR-0015 — Every route declares how it is protected, and the boot enforces it
+
+**Decision.** Every Fastify route carries a `bosAccess` config saying whether it
+is public, internal, authenticated, or requires a named permission. An assertion
+in `onReady` refuses to listen if any route does not.
+
+**Why.** ADR-0013 removes whole modules from the route table, which is the
+right coarse control. It does nothing about the individual route somebody adds
+next week and forgets to protect — and the failure mode there is silent, because
+an unprotected endpoint behaves perfectly until somebody finds it.
+
+Making the classification mandatory turns that from a review question into a
+boot failure with the method and path in the message. `public` is a positive
+assertion with a written reason, not the absence of one, so a reviewer sees the
+decision in the diff.
+
+**Cost.** Four extra lines per route, and a small amount of ceremony around
+Fastify plugins that register their own routes — the CORS preflight responder
+is exempted by name, which is itself a line somebody had to write and justify.
+
+---
+
+## ADR-0016 — Cross-tenant resources answer 404, never 403
+
+**Decision.** A request for a resource in another workspace returns 404, with
+the same body as a resource that does not exist.
+
+**Why.** A 403 confirms the identifier is real. Given an endpoint that
+distinguishes them, an attacker can enumerate another tenant's records one
+guess at a time without ever reading one — which is enough to learn how many
+customers a competitor has, or whether a particular person is one of them.
+
+It is also the honest answer. Row-level security scopes the query to the
+caller's workspace, so the row genuinely is not there.
+
+**Cost.** A member who has legitimately lost access to a workspace sees "not
+found" rather than "you no longer have access", which is a worse error message.
+The audit log records the real reason, and support can read it.
+
+---
+
+## ADR-0017 — Analytics visitors are keyed pseudonyms, derived server-side
+
+**Amends ADR-0012**, which specified a "daily-rotating salted hash" but was
+implemented as an unsalted `SHA-256(ip + user-agent)` at the edge.
+
+**Decision.** The Worker sends a coarse per-request digest. The API derives the
+stored value with `HMAC-SHA256` over a server-side secret plus the date, and
+that is what is written.
+
+**Why.** An unsalted hash of an address and a user agent is not a pseudonym.
+The input space of IPv4 addresses and common user agents is small enough to
+enumerate exhaustively on commodity hardware, so anyone holding the digests can
+recover the addresses — which is precisely the property ADR-0012 claimed to
+have.
+
+Keying it removes the enumeration, because the attacker would also need the
+secret. Deriving it in the API rather than at the edge means one process holds
+that secret, and rotating it re-pseudonymises every visitor.
+
+**Cost.** One more HMAC per event, on a path that already writes to Postgres.
+Rotating the secret breaks continuity of the visitor dimension across the
+rotation, which is the intended behaviour rather than a side effect.

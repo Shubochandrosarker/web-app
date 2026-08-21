@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --port 3001",
+    "dev": "next dev --port ${PORT:-3001}",
     "build": "next build",
-    "start": "next start --port 3001",
+    "start": "next start --port ${PORT:-3001}",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -15,7 +15,8 @@
     "@bos/validation": "workspace:*",
     "next": "^16.3.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

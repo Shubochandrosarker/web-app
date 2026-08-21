@@ -77,10 +77,45 @@ This is the single most consequential difference between this platform and the
 WordPress-plus-plugins alternative, where an uploaded certificate lands in
 `/wp-content/uploads/` behind nothing but an unguessable filename.
 
-## Before launch
+## Before launch — this config is not production-ready
 
-`telephone`, `whatsapp` and `email` above are placeholders. They must be
-replaced with the real, verified values before the site is indexable —
-inconsistent NAP data is difficult to correct once it has propagated to
-aggregators. `sameAs` should list the real social and Business Profile URLs at
-the same time.
+`telephone`, `whatsapp`, `email` and `streetAddress` are **placeholders**, and
+`sameAs` is empty. They are published as the business's NAP in `LocalBusiness`
+structured data and in the footer of every page, so shipping them is worse than
+shipping no structured data at all: inconsistent NAP data is difficult to
+correct once it has propagated to aggregators.
+
+The gate that enforces this:
+
+```bash
+pnpm check:readiness nuesheba
+```
+
+It exits non-zero while any blocker remains, and it runs in CI. Current
+blockers:
+
+| Field               | Why it blocks                                                               |
+| ------------------- | --------------------------------------------------------------------------- |
+| `nap.telephone`     | Published as the business's phone. Nobody answers `+8801700000000`.         |
+| `nap.whatsapp`      | The WhatsApp acknowledgement is sent to this number.                        |
+| `nap.email`         | Appears in the footer and receives every lead notification.                 |
+| `nap.streetAddress` | "National University Gate" is a landmark, not a deliverable address.        |
+| `nap.sameAs`        | An Organization claiming an entity with no corroborating profiles anywhere. |
+
+And worth doing at the same time, though they do not block:
+
+- `nap.latitude` / `nap.longitude`, taken from the Google Business Profile
+  listing rather than a geocoder.
+- `nap.googleBusinessProfileUrl` — for a local service business, this is most
+  of local search visibility.
+- `brand.logoUrl`, so the Organization node has a logo and social shares have
+  an image.
+- `legal.independenceDisclaimer`. NuESheba assists with National University
+  documents and is **not affiliated with the university**; saying so plainly in
+  the footer protects both the visitor and the site's own trustworthiness. The
+  wording is a decision for the business, which is why the platform renders it
+  verbatim rather than supplying one.
+
+**None of these may be guessed.** They are facts about a business, and a
+plausible-looking invention is worse than an obvious placeholder, because it
+will not be caught.

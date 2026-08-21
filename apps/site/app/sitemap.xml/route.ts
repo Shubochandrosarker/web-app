@@ -1,5 +1,5 @@
 import { SITEMAP_SEGMENTS, groupRoutesByType, renderSitemapIndexXml } from '@bos/seo';
-import { getContentProvider } from '@/lib/content';
+import { getRoutes } from '@/lib/content';
 import { getWorkspace } from '@/lib/workspace';
 
 /**
@@ -12,11 +12,16 @@ import { getWorkspace } from '@/lib/workspace';
  * Only types that actually have indexable routes are listed. An empty
  * `services.xml` is a submitted file with zero URLs, and it reads as a problem.
  */
+/*
+ * Rendered per request from cached route data. The data is tag-revalidated on
+ * publish, so a new page appears in the sitemap immediately rather than after
+ * the next scheduled regeneration.
+ */
 export const dynamic = 'force-dynamic';
 
 export async function GET(): Promise<Response> {
   const workspace = await getWorkspace();
-  const routes = await getContentProvider().listRoutes(workspace.locale.defaultLocale);
+  const routes = await getRoutes(workspace.locale.defaultLocale);
   const grouped = groupRoutesByType(routes);
 
   const sitemaps = [...grouped.entries()]

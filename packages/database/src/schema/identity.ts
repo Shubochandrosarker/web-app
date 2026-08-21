@@ -36,6 +36,17 @@ export const users = pgTable(
     timeZone: varchar('time_zone', { length: 64 }).notNull().default('UTC'),
     mfaSecret: varchar('mfa_secret', { length: 255 }),
     mfaEnabledAt: timestamp('mfa_enabled_at', { withTimezone: true }),
+    /**
+     * SHA-256 of each unused recovery code.
+     *
+     * In the database rather than in Redis because these are the credential of
+     * last resort: a cache flush must not be able to lock every MFA user out
+     * of their own account. Emptied when MFA is disabled or codes are
+     * regenerated.
+     */
+    mfaRecoveryCodeHashes: jsonb('mfa_recovery_code_hashes')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
     /** Cleared on every successful login; gates throttling and lockout. */
     failedLoginCount: integer('failed_login_count').notNull().default(0),

@@ -6,12 +6,18 @@ import {
 } from '@bos/business-types';
 
 /**
- * Navigation is derived from the workspace's enabled modules, never hard-coded.
+ * Navigation is derived from the workspace's enabled modules and the signed-in
+ * person's permissions, never hard-coded.
  *
  * This is the reusability claim made concrete: a tour operator and a
  * consultancy get different sidebars from the same build, because the sidebar
  * is a projection of configuration rather than a component someone edits per
  * client.
+ *
+ * The permission filter is a **courtesy**, not a control. It stops a viewer
+ * from clicking into a screen that would refuse them, which is a better
+ * experience than a 403 — but the refusal is the API's, and it happens whether
+ * or not the link was ever rendered.
  */
 export interface NavItem {
   readonly href: string;
@@ -24,40 +30,147 @@ export interface NavGroup {
   readonly items: readonly NavItem[];
 }
 
-const NAV_MAP: Partial<Record<ModuleId, { group: string; href: string; term?: string }>> = {
-  'crm.leads': { group: 'CRM', href: '/leads', term: 'lead' },
-  'crm.contacts': { group: 'CRM', href: '/contacts', term: 'contact' },
-  'crm.pipeline': { group: 'CRM', href: '/pipeline' },
-  'crm.tasks': { group: 'CRM', href: '/tasks' },
-  'marketing.cms': { group: 'Content', href: '/content' },
-  'marketing.landing_pages': { group: 'Content', href: '/landing-pages' },
-  'marketing.forms': { group: 'Content', href: '/forms' },
-  'marketing.seo': { group: 'Content', href: '/seo' },
-  'ops.services': { group: 'Operations', href: '/services', term: 'service' },
-  'ops.scheduling': { group: 'Operations', href: '/appointments', term: 'appointment' },
-  'ops.documents': { group: 'Operations', href: '/documents' },
-  'ops.orders': { group: 'Operations', href: '/orders', term: 'order' },
-  'ops.workflows': { group: 'Operations', href: '/automations' },
-  'comms.email': { group: 'Communications', href: '/email' },
-  'comms.whatsapp': { group: 'Communications', href: '/whatsapp' },
-  'analytics.traffic': { group: 'Analytics', href: '/analytics' },
-  'analytics.search': { group: 'Analytics', href: '/analytics/search' },
-  'analytics.conversion': { group: 'Analytics', href: '/analytics/conversion' },
-  'reputation.reviews': { group: 'Reputation', href: '/reviews' },
-  'reputation.local_seo': { group: 'Reputation', href: '/local-seo' },
+interface NavEntry {
+  readonly group: string;
+  readonly href: string;
+  /** Vocabulary key, so the label follows the business type's language. */
+  readonly term?: string;
+  /** The permission a person needs before this link is worth showing them. */
+  readonly permission: string;
+  /** Not yet implemented; listed so the gap is visible rather than forgotten. */
+  readonly pending?: boolean;
+}
+
+const NAV_MAP: Partial<Record<ModuleId, NavEntry>> = {
+  'crm.leads': { group: 'CRM', href: '/leads', term: 'lead', permission: 'leads.read' },
+  'crm.contacts': {
+    group: 'CRM',
+    href: '/contacts',
+    term: 'contact',
+    permission: 'contacts.read',
+    pending: true,
+  },
+  'crm.tasks': { group: 'CRM', href: '/tasks', permission: 'tasks.read', pending: true },
+  'marketing.cms': { group: 'Content', href: '/content', permission: 'content.read' },
+  'marketing.landing_pages': {
+    group: 'Content',
+    href: '/landing-pages',
+    permission: 'content.read',
+    pending: true,
+  },
+  'marketing.forms': {
+    group: 'Content',
+    href: '/forms',
+    permission: 'forms.read',
+    pending: true,
+  },
+  'marketing.seo': { group: 'Content', href: '/seo', permission: 'seo.read', pending: true },
+  'ops.services': {
+    group: 'Operations',
+    href: '/services',
+    term: 'service',
+    permission: 'services.read',
+    pending: true,
+  },
+  'ops.scheduling': {
+    group: 'Operations',
+    href: '/appointments',
+    term: 'appointment',
+    permission: 'services.read',
+    pending: true,
+  },
+  'ops.documents': {
+    group: 'Operations',
+    href: '/documents',
+    permission: 'documents.read',
+    pending: true,
+  },
+  'ops.orders': {
+    group: 'Operations',
+    href: '/orders',
+    term: 'order',
+    permission: 'leads.read',
+    pending: true,
+  },
+  'ops.workflows': {
+    group: 'Operations',
+    href: '/automations',
+    permission: 'settings.read',
+    pending: true,
+  },
+  'comms.email': {
+    group: 'Communications',
+    href: '/email',
+    permission: 'leads.read',
+    pending: true,
+  },
+  'comms.whatsapp': {
+    group: 'Communications',
+    href: '/whatsapp',
+    permission: 'leads.read',
+    pending: true,
+  },
+  'analytics.traffic': {
+    group: 'Analytics',
+    href: '/analytics',
+    permission: 'analytics.read',
+    pending: true,
+  },
+  'analytics.search': {
+    group: 'Analytics',
+    href: '/analytics/search',
+    permission: 'analytics.read',
+    pending: true,
+  },
+  'analytics.conversion': {
+    group: 'Analytics',
+    href: '/analytics/conversion',
+    permission: 'analytics.read',
+    pending: true,
+  },
+  'reputation.reviews': {
+    group: 'Reputation',
+    href: '/reviews',
+    permission: 'content.read',
+    pending: true,
+  },
+  'reputation.local_seo': {
+    group: 'Reputation',
+    href: '/local-seo',
+    permission: 'seo.read',
+    pending: true,
+  },
 };
 
 const GROUP_ORDER = ['CRM', 'Content', 'Operations', 'Communications', 'Analytics', 'Reputation'];
 
+export interface BuildNavigationOptions {
+  /** Include screens that are scheduled but not built. Off by default. */
+  readonly includePending?: boolean;
+}
+
 export function buildNavigation(
   enabledModules: readonly ModuleId[],
   businessType: BusinessType,
+  permissions: readonly string[],
+  options: BuildNavigationOptions = {},
 ): NavGroup[] {
+  const held = new Set(permissions);
   const groups = new Map<string, NavItem[]>();
 
   for (const moduleId of enabledModules) {
     const entry = NAV_MAP[moduleId];
     if (!entry) continue;
+
+    /*
+     * A link to a screen that does not exist is worse than a missing link: it
+     * reads as a broken product rather than an unfinished one. The entries
+     * stay in the map so the remaining work is visible in this file, and
+     * `includePending` exposes them for a roadmap view.
+     */
+    if (entry.pending && !options.includePending) continue;
+
+    if (!held.has(entry.permission)) continue;
 
     // The label follows the business type's vocabulary: the same
     // ops.scheduling module reads "Departures" for a tour operator and
@@ -74,4 +187,12 @@ export function buildNavigation(
     title,
     items: groups.get(title) ?? [],
   }));
+}
+
+/** Which module-backed screens are still to be built. Used by the roadmap page. */
+export function pendingScreens(enabledModules: readonly ModuleId[]): readonly string[] {
+  return enabledModules
+    .map((moduleId) => NAV_MAP[moduleId])
+    .filter((entry): entry is NavEntry => entry?.pending === true)
+    .map((entry) => entry.href);
 }

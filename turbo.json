@@ -9,7 +9,9 @@
     "BOS_ALLOW_INDEXING",
     "CONTENT_PROVIDER",
     "NEXT_PUBLIC_SITE_URL",
-    "NEXT_PUBLIC_API_URL"
+    "NEXT_PUBLIC_API_URL",
+    "NEXT_PUBLIC_DASHBOARD_URL",
+    "PORT"
   ],
   "tasks": {
     "build": {
@@ -22,9 +24,6 @@
     },
     "typecheck": {
       "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "lint": {
       "outputs": []
     },
     "test": {

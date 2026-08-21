@@ -10,3 +10,8 @@ onlyBuiltDependencies:
   - sharp
   - unrs-resolver
   - '@tailwindcss/oxide'
+  # wrangler ships workerd as a platform binary that its postinstall unpacks.
+  # Without this entry every install prints an "ignored build scripts" warning
+  # and `wrangler dev` fails at first run with a missing binary. Allow-listed
+  # by name rather than by enabling lifecycle scripts globally.
+  - workerd

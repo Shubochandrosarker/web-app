@@ -8,7 +8,17 @@ export type Database = NodePgDatabase<typeof schema>;
 export interface CreateDatabaseOptions {
   readonly connectionString: string;
   readonly maxConnections?: number;
-  readonly ssl?: boolean;
+  /**
+   * Transport security, as three states rather than a boolean.
+   *
+   * `require` and `verify-full` are genuinely different: the first encrypts
+   * and accepts any certificate, which stops passive capture but not an active
+   * man in the middle; the second also checks the chain. Managed Postgres
+   * often needs `require` because its CA is not in the container's trust
+   * store, and collapsing the two into `ssl: true` hides which one is in
+   * force.
+   */
+  readonly ssl?: 'disable' | 'require' | 'verify-full';
 }
 
 let pool: pg.Pool | undefined;
@@ -24,7 +34,9 @@ export function createDatabase(options: CreateDatabaseOptions): Database {
   pool ??= new pg.Pool({
     connectionString: options.connectionString,
     max: options.maxConnections ?? 10,
-    ...(options.ssl ? { ssl: { rejectUnauthorized: true } } : {}),
+    ...(options.ssl === undefined || options.ssl === 'disable'
+      ? {}
+      : { ssl: { rejectUnauthorized: options.ssl === 'verify-full' } }),
     // Fail fast rather than queueing behind a database that is already gone.
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 30_000,

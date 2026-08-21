@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Lint, typecheck, build, test
+    name: Format, lint, typecheck, build
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -31,6 +31,12 @@ jobs:
       - name: Format check
         run: pnpm run format:check
 
+      # `next lint` was removed in Next 16. This runs ESLint over every app and
+      # package from the root flat config — the step is named "lint" and now
+      # actually lints, which it did not before.
+      - name: Lint
+        run: pnpm run lint
+
       - name: Typecheck
         run: pnpm run typecheck
 
@@ -41,14 +47,14 @@ jobs:
           # a build needs to know which workspace it is for. CI builds the
           # reference tenant; a release pipeline sets the client's slug.
           BOS_WORKSPACE_SLUG: nuesheba
+          NEXT_PUBLIC_SITE_URL: https://nuesheba.com
+          NEXT_PUBLIC_API_URL: https://api.nuesheba.com
+          NEXT_PUBLIC_DASHBOARD_URL: https://app.nuesheba.com
 
-      - name: Test
-        run: pnpm run test
-
-  migrations:
-    name: Migrations apply cleanly
+  test:
+    name: Tests against a real database
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -60,6 +66,17 @@ jobs:
         ports: ['5432:5432']
         options: >-
           --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      # The API's rate limits, session cache and idempotency claims are Redis
+      # operations. Faking them would test a different program.
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -80,10 +97,37 @@ jobs:
         env:
           DATABASE_URL: postgresql://bos:bos@localhost:5432/bos_ci
 
+      # ---------------------------------------------------------------------
+      # The application role.
+      #
+      # `pnpm db:migrate` creates `bos_app` as NOLOGIN, because a committed
+      # password is not a password. CI gives it one so the test suite can
+      # connect as the role production uses.
+      #
+      # This is not a convenience. Row-level security does not apply to a
+      # superuser, to a role with BYPASSRLS, or (without FORCE) to the table
+      # owner — so a suite connected as `bos` would pass every cross-tenant
+      # test while the boundary was wide open. The harness refuses to run as
+      # such a role; this is what gives it one that binds.
+      # ---------------------------------------------------------------------
+      - name: Grant the application role a CI password
+        run: |
+          PGPASSWORD=bos psql -h localhost -U bos -d bos_ci \
+            -c "ALTER ROLE bos_app WITH LOGIN PASSWORD 'bos_app_ci';"
+
       - name: Verify tenant isolation against the real database
         run: pnpm --filter @bos/database run test
         env:
           DATABASE_URL: postgresql://bos:bos@localhost:5432/bos_ci
+
+      - name: Run every test suite
+        run: pnpm run test
+        env:
+          DATABASE_URL: postgresql://bos:bos@localhost:5432/bos_ci
+          # The API suite connects as the least-privilege role, so its
+          # isolation assertions are about isolation rather than about nothing.
+          TEST_DATABASE_URL: postgresql://bos_app:bos_app_ci@localhost:5432/bos_ci
+          REDIS_URL: redis://localhost:6379
 
       - name: Fail if the Drizzle schema has ungenerated changes
         run: |
@@ -92,3 +136,38 @@ jobs:
             echo "::error::Drizzle schema changed without a committed migration. Run pnpm db:generate."
             exit 1
           fi
+        env:
+          DATABASE_URL: postgresql://bos:bos@localhost:5432/bos_ci
+
+  tenant-config:
+    name: Tenant configuration is production-ready
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ---------------------------------------------------------------------
+      # The launch gate.
+      #
+      # Fails while any tenant config still carries a placeholder phone number,
+      # email or address. Those values are published as the business's NAP in
+      # LocalBusiness structured data and in the footer of every page —
+      # inconsistent NAP data is difficult to correct once aggregators have it,
+      # so this is a blocker rather than a warning.
+      #
+      # `continue-on-error` while NuESheba's real details are outstanding: the
+      # report is visible on every run, and the job turns red without blocking
+      # unrelated work. Remove it as part of the go-live checklist.
+      # ---------------------------------------------------------------------
+      - name: Check tenant configuration
+        run: pnpm run check:readiness
+        continue-on-error: true

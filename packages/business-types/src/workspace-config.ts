@@ -42,6 +42,24 @@ export const brandSchema = z.object({
     .optional(),
 });
 
+/**
+ * Legal and disclosure text.
+ *
+ * Separate from `features` because it is not a switch. A service that helps
+ * people obtain documents from an institution must not be mistakable for that
+ * institution, and the wording of that disclaimer is a legal decision the
+ * business makes — so it is text they own, rendered verbatim, not a boolean
+ * that selects between phrasings the platform invented.
+ */
+export const legalSchema = z.object({
+  /** Rendered in the footer of every page when present. */
+  independenceDisclaimer: z.string().max(600).optional(),
+  /** Shown alongside the copyright line. */
+  registrationNumber: z.string().max(120).optional(),
+  privacyPolicyPath: z.string().max(2048).optional(),
+  termsPath: z.string().max(2048).optional(),
+});
+
 export const localeSettingsSchema = z.object({
   defaultLocale: localeCode,
   supportedLocales: z.array(localeCode).min(1),
@@ -58,6 +76,7 @@ export const workspaceConfigSchema = z
     brand: brandSchema,
     nap: napSchema,
     locale: localeSettingsSchema,
+    legal: legalSchema.default({}),
     /**
      * Modules on top of the business-type preset. Dependencies are resolved
      * automatically — listing `ops.scheduling` also enables `ops.services`.
@@ -71,6 +90,7 @@ export const workspaceConfigSchema = z
 
 export type WorkspaceConfig = z.infer<typeof workspaceConfigSchema>;
 export type Nap = z.infer<typeof napSchema>;
+export type Legal = z.infer<typeof legalSchema>;
 
 export interface ResolvedWorkspaceConfig extends WorkspaceConfig {
   readonly enabledModules: readonly ModuleId[];

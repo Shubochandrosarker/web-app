@@ -37,6 +37,35 @@ export class ApiError extends Error {
   static forbidden(): ApiError {
     return new ApiError(403, 'forbidden', 'You do not have access to this resource');
   }
+
+  static conflict(message: string): ApiError {
+    return new ApiError(409, 'conflict', message);
+  }
+
+  /**
+   * One message for every credential failure.
+   *
+   * "No such account", "wrong password" and "account suspended" are three
+   * facts an attacker would like and a legitimate user does not need. The
+   * distinction is recorded in the audit log, where it is useful and not
+   * reachable from outside.
+   */
+  static invalidCredentials(): ApiError {
+    return new ApiError(401, 'invalid_credentials', 'Those sign-in details are not correct');
+  }
+
+  /**
+   * A resource in another tenant.
+   *
+   * Deliberately a 404 and not a 403: answering "you may not see this" tells
+   * the caller the id exists, which is enough to enumerate another workspace's
+   * records one guess at a time. To a caller outside the tenant, the row does
+   * not exist — and that is also the honest answer, because row-level security
+   * means the query genuinely returned nothing.
+   */
+  static hidden(what: string): ApiError {
+    return new ApiError(404, 'not_found', `${what} not found`);
+  }
 }
 
 export function registerErrorHandler(app: FastifyInstance): void {
@@ -48,6 +77,7 @@ export function registerErrorHandler(app: FastifyInstance): void {
           message: error.message,
           ...(error.details === undefined ? {} : { details: error.details }),
         },
+        requestId: request.id,
       });
     }
 
@@ -61,16 +91,39 @@ export function registerErrorHandler(app: FastifyInstance): void {
             message: issue.message,
           })),
         },
+        requestId: request.id,
+      });
+    }
+
+    /*
+     * Fastify's own errors already carry a safe status and code (body too
+     * large, unsupported media type, rate limited). Passing them through keeps
+     * a 413 from being reported to the client as an unexplained 500, while
+     * anything 5xx still falls through to the opaque handler below.
+     */
+    const fastifyError = error as { statusCode?: number; code?: string; message?: string };
+    const status = typeof fastifyError.statusCode === 'number' ? fastifyError.statusCode : 500;
+
+    if (status >= 400 && status < 500) {
+      return reply.status(status).send({
+        error: {
+          code: fastifyError.code ?? 'bad_request',
+          message: fastifyError.message ?? 'The request could not be processed',
+        },
+        requestId: request.id,
       });
     }
 
     request.log.error({ err: error }, 'Unhandled error');
     return reply.status(500).send({
       error: { code: 'internal_error', message: 'Something went wrong' },
+      requestId: request.id,
     });
   });
 
-  app.setNotFoundHandler((_request, reply) =>
-    reply.status(404).send({ error: { code: 'not_found', message: 'No such route' } }),
+  app.setNotFoundHandler((request, reply) =>
+    reply
+      .status(404)
+      .send({ error: { code: 'not_found', message: 'No such route' }, requestId: request.id }),
   );
 }

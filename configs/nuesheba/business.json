@@ -27,6 +27,7 @@
     "timeZone": "Asia/Dhaka",
     "currency": "BDT"
   },
+  "legal": {},
   "modules": ["ops.documents", "comms.whatsapp", "reputation.local_seo"],
   "disabledModules": [],
   "features": {
