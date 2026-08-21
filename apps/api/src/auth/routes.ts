@@ -249,6 +249,44 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     },
   );
 
+  /* ------------------------------------------------------------- sessions */
+
+  app.get('/v1/auth/sessions', { config: { bosAccess: authenticatedRoute() } }, async (request) => {
+    const sessions = await auth.listSessions(requireUserId(request), request.auth?.sessionId ?? '');
+    return {
+      sessions: sessions.map((session) => ({
+        id: session.id,
+        userAgent: session.userAgent,
+        ipAddress: session.ipAddress,
+        createdAt: session.createdAt.toISOString(),
+        lastSeenAt: session.lastSeenAt?.toISOString() ?? null,
+        expiresAt: session.expiresAt.toISOString(),
+        current: session.current,
+      })),
+    };
+  });
+
+  app.delete(
+    '/v1/auth/sessions/:id',
+    { config: { bosAccess: authenticatedRoute() } },
+    async (request, reply) => {
+      const { id } = z.object({ id: z.uuid() }).parse(request.params);
+      const revoked = await auth.revokeSession(requireUserId(request), id);
+      if (!revoked) throw ApiError.notFound('Session');
+
+      await auth.audit(
+        null,
+        requireUserId(request),
+        'auth.session_revoked',
+        requestContext(request),
+        {
+          sessionId: id,
+        },
+      );
+      return reply.status(204).send();
+    },
+  );
+
   /* ------------------------------------------------------------------ me */
 
   app.get('/v1/auth/me', { config: { bosAccess: authenticatedRoute() } }, async (request) => {

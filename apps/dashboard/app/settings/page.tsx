@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/api';
+import { apiFetch, getSession } from '@/lib/api';
 import { DashboardShell } from '@/components/shell';
 import { MfaPanel } from '@/components/mfa-panel';
+import { SessionsPanel, type SessionRow } from '@/components/sessions-panel';
 
 export const metadata = { title: 'Settings' };
 export const dynamic = 'force-dynamic';
@@ -9,6 +10,10 @@ export const dynamic = 'force-dynamic';
 export default async function SettingsPage() {
   const session = await getSession();
   if (!session) redirect('/sign-in');
+
+  const { sessions } = await apiFetch<{ sessions: SessionRow[] }>('/v1/auth/sessions', {
+    workspaceScoped: false,
+  }).catch(() => ({ sessions: [] as SessionRow[] }));
 
   return (
     <DashboardShell session={session} businessType="education_service" current="/settings">
@@ -22,6 +27,7 @@ export default async function SettingsPage() {
       <div className="detail-grid">
         <div className="detail-main">
           <MfaPanel enabled={session.user.mfaEnabled} />
+          <SessionsPanel sessions={sessions} />
         </div>
 
         <aside className="detail-side">

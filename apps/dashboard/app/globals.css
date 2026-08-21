@@ -856,3 +856,85 @@ textarea {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ------------------------------------------------------------- sessions */
+
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.session-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.session-row:last-child {
+  border-bottom: none;
+}
+
+.session-row p {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+}
+
+.badge--current {
+  background: var(--color-primary-soft, #e0e7ff);
+  color: var(--color-primary, #1a56db);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.75rem;
+  margin-left: 0.5rem;
+}
+
+.panel-actions {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.confirm-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  background: var(--color-danger-soft, #fef2f2);
+  border: 1px solid var(--color-danger-border, #fecaca);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.confirm-inline p {
+  margin: 0;
+  flex: 1 1 16rem;
+}
+
+.button--danger {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #fff;
+}
+
+.button--danger:hover {
+  background: #991b1b;
+}
+
+.button--small {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.form-message {
+  background: var(--color-success-soft, #ecfdf5);
+  border: 1px solid var(--color-success-border, #a7f3d0);
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+}

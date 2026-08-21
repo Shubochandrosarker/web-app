@@ -502,6 +502,79 @@ export class AuthService {
   }
 
   /**
+   * The user's live sessions, for the "where am I signed in" screen.
+   *
+   * Rows are the user's own and only the user's own — the user id comes from
+   * the authenticated request, never from a parameter a client could vary.
+   */
+  async listSessions(
+    userId: string,
+    currentSessionId: string,
+  ): Promise<
+    readonly {
+      id: string;
+      userAgent: string;
+      ipAddress: string;
+      createdAt: Date;
+      lastSeenAt: Date | null;
+      expiresAt: Date;
+      current: boolean;
+    }[]
+  > {
+    return withoutTenantScope(this.db, async (tx) => {
+      const rows = await tx
+        .select({
+          id: schema.sessions.id,
+          userAgent: schema.sessions.userAgent,
+          ipAddress: schema.sessions.ipAddress,
+          createdAt: schema.sessions.createdAt,
+          lastSeenAt: schema.sessions.lastSeenAt,
+          expiresAt: schema.sessions.expiresAt,
+        })
+        .from(schema.sessions)
+        .where(
+          and(
+            eq(schema.sessions.userId, userId),
+            isNull(schema.sessions.revokedAt),
+            sql`${schema.sessions.expiresAt} > now()`,
+          ),
+        )
+        .orderBy(sql`${schema.sessions.lastSeenAt} desc nulls last`);
+
+      return rows.map((row) => ({
+        ...row,
+        userAgent: row.userAgent ?? '',
+        ipAddress: row.ipAddress ?? '',
+        current: row.id === currentSessionId,
+      }));
+    });
+  }
+
+  /**
+   * Revoke one of the user's own sessions.
+   *
+   * The WHERE carries both ids: a session id belonging to someone else
+   * matches zero rows, and the caller learns only "not found" — not whether
+   * the id exists.
+   */
+  async revokeSession(userId: string, sessionId: string): Promise<boolean> {
+    return withoutTenantScope(this.db, async (tx) => {
+      const revoked = await tx
+        .update(schema.sessions)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(schema.sessions.id, sessionId),
+            eq(schema.sessions.userId, userId),
+            isNull(schema.sessions.revokedAt),
+          ),
+        )
+        .returning({ id: schema.sessions.id });
+      return revoked.length > 0;
+    });
+  }
+
+  /**
    * Resolve an access token to a user.
    *
    * Two lookups, deliberately: Redis says which session the token belongs to,

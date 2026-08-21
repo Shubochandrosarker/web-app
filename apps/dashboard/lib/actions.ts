@@ -43,7 +43,8 @@ async function adoptSession(setCookieHeaders: string[]): Promise<void> {
   const isProduction = process.env.NODE_ENV === 'production';
 
   for (const header of setCookieHeaders) {
-    const [pair] = header.split(';');
+    const parts = header.split(';').map((part) => part.trim());
+    const [pair, ...attributes] = parts;
     const separator = pair?.indexOf('=') ?? -1;
     if (!pair || separator === -1) continue;
 
@@ -51,12 +52,23 @@ async function adoptSession(setCookieHeaders: string[]): Promise<void> {
     const value = pair.slice(separator + 1);
     if (name !== ACCESS_COOKIE && name !== REFRESH_COOKIE) continue;
 
+    // The API decides how long its tokens live; the dashboard's cookie must
+    // expire in step or the browser presents a token the server has already
+    // let die. Parsed from the API's own Set-Cookie rather than duplicated.
+    let maxAge = name === REFRESH_COOKIE ? 2_592_000 : 900;
+    for (const attribute of attributes) {
+      const [attrName, attrValue] = attribute.split('=');
+      if (attrName?.toLowerCase() === 'max-age' && Number(attrValue) > 0) {
+        maxAge = Number(attrValue);
+      }
+    }
+
     jar.set(name, value, {
       httpOnly: true,
       secure: isProduction,
       sameSite: 'lax',
       path: '/',
-      maxAge: name === REFRESH_COOKIE ? 2_592_000 : 900,
+      maxAge,
     });
   }
 }
@@ -142,6 +154,35 @@ export async function signOut(): Promise<void> {
     }).catch(() => undefined);
   }
 
+  jar.delete(ACCESS_COOKIE);
+  jar.delete(REFRESH_COOKIE);
+  redirect('/sign-in');
+}
+
+/* ---------------------------------------------------------------- sessions */
+
+export async function revokeSession(sessionId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/auth/sessions/${sessionId}`, {
+      method: 'DELETE',
+      workspaceScoped: false,
+    });
+    revalidatePath('/settings');
+    return { ok: true, message: 'That session has been signed out.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function signOutEverywhere(): Promise<void> {
+  try {
+    await apiFetch('/v1/auth/logout-all', { method: 'POST', workspaceScoped: false });
+  } catch {
+    // The local cookies are cleared regardless; a failed call must not leave
+    // somebody apparently signed in on this device.
+  }
+
+  const jar = await cookies();
   jar.delete(ACCESS_COOKIE);
   jar.delete(REFRESH_COOKIE);
   redirect('/sign-in');
