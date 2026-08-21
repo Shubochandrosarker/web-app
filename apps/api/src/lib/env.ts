@@ -108,6 +108,14 @@ export function assertProductionSafe(config: ApiConfig): readonly string[] {
   if (!config.TURNSTILE_SECRET_KEY) {
     problems.push('TURNSTILE_SECRET_KEY is unset, so public forms have no CAPTCHA.');
   }
+  if (config.DOCUMENT_SCANNER === 'none' && config.storage) {
+    problems.push(
+      'DOCUMENT_SCANNER=none with storage configured: uploads are verified but never scanned for malware.',
+    );
+  }
+  if (config.DOCUMENT_SCANNER === 'stub') {
+    problems.push('DOCUMENT_SCANNER=stub only detects the EICAR test string. Never production.');
+  }
   if (config.allowedOrigins.length === 0) {
     problems.push('API_ALLOWED_ORIGINS is empty, so no browser origin may call the API.');
   }

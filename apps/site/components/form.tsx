@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import type { ResolvedForm, ResolvedFormField } from '@bos/content';
 import { readAttribution } from '@/lib/attribution';
 import { Turnstile } from '@/components/turnstile';
+import { FileUploadField, type UploadedDocument } from '@/components/file-upload-field';
 
 /**
  * The service request form.
@@ -35,6 +36,9 @@ export function ServiceRequestForm({ form, workspaceSlug, locale }: ServiceReque
   // Incremented on every rejected submission: the server consumed the
   // Turnstile token, so the widget must mint a fresh one before a retry.
   const [turnstileReset, setTurnstileReset] = useState(0);
+  // Documents uploaded ahead of the submission, each carrying the claim
+  // token that proves this visitor owns the upload.
+  const [documents, setDocuments] = useState<UploadedDocument[]>([]);
   const formId = useId();
 
   const turnstileSiteKey =
@@ -69,6 +73,8 @@ export function ServiceRequestForm({ form, workspaceSlug, locale }: ServiceReque
     const values: Record<string, string | boolean> = {};
 
     for (const field of form.fields) {
+      // File fields travel as documentClaims, never as form values.
+      if (field.type === 'file') continue;
       const raw = formData.get(field.name);
       if (field.type === 'checkbox') values[field.name] = raw === 'on';
       else if (typeof raw === 'string') values[field.name] = raw;
@@ -99,6 +105,14 @@ export function ServiceRequestForm({ form, workspaceSlug, locale }: ServiceReque
             // land on.
             attribution: readAttribution(),
             ...(typeof turnstileToken === 'string' ? { turnstileToken } : {}),
+            ...(documents.length > 0
+              ? {
+                  documentClaims: documents.map((entry) => ({
+                    documentId: entry.documentId,
+                    claimToken: entry.claimToken,
+                  })),
+                }
+              : {}),
           }),
         },
       );
@@ -181,15 +195,28 @@ export function ServiceRequestForm({ form, workspaceSlug, locale }: ServiceReque
         </p>
       ) : null}
 
-      {form.fields.map((field) => (
-        <Field
-          key={field.name}
-          field={field}
-          formId={formId}
-          error={fieldErrors[field.name]}
-          disabled={submitting}
-        />
-      ))}
+      {form.fields.map((field) =>
+        field.type === 'file' ? (
+          <FileUploadField
+            key={field.name}
+            field={field}
+            workspaceSlug={workspaceSlug}
+            disabled={submitting}
+            onUploaded={(document) => setDocuments((current) => [...current, document])}
+            onRemoved={(documentId) =>
+              setDocuments((current) => current.filter((entry) => entry.documentId !== documentId))
+            }
+          />
+        ) : (
+          <Field
+            key={field.name}
+            field={field}
+            formId={formId}
+            error={fieldErrors[field.name]}
+            disabled={submitting}
+          />
+        ),
+      )}
 
       {/*
         The honeypot.

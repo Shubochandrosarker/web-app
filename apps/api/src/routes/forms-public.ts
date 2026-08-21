@@ -9,6 +9,7 @@ import { ApiError } from '../lib/errors.ts';
 import { publicRoute } from '../lib/permissions.ts';
 import { consumeRateLimit } from '../lib/redis.ts';
 import { verifyTurnstile } from '../lib/turnstile.ts';
+import { attachDocumentsByClaim } from './documents.ts';
 import type { AppContext } from '../app.ts';
 
 /**
@@ -45,8 +46,20 @@ const submissionBody = z.object({
   /** Milliseconds between the form rendering and the submission. */
   elapsedMs: z.number().int().nonnegative().max(86_400_000).optional(),
   turnstileToken: z.string().max(4096).optional(),
-  /** Ids of documents already uploaded through the private upload endpoint. */
-  documentIds: z.array(z.uuid()).max(5).default([]),
+  /**
+   * Documents uploaded before submitting, each with its claim token.
+   *
+   * The token — returned once by the upload authorisation — is what proves
+   * this submission belongs to the person who uploaded. A bare document id
+   * proves only that somebody saw an id, and ids leak: logs, referrers,
+   * shoulder surfing. Without the token, a crafted submission could attach
+   * somebody else's transcript to its own lead and read it from the
+   * dashboard.
+   */
+  documentClaims: z
+    .array(z.object({ documentId: z.uuid(), claimToken: z.string().min(1).max(400) }))
+    .max(5)
+    .default([]),
 });
 
 /** Bots fill everything in; a human never sees this field. */
@@ -397,11 +410,12 @@ export function registerPublicFormRoutes(app: FastifyInstance, context: AppConte
         idempotencyKey: idempotencyKeyFor(form.id, clean),
       });
 
-      // Attach any documents the visitor uploaded before submitting. Done
-      // after the lead exists so an abandoned upload never has a lead to point
-      // at — the retention sweep collects those.
-      if (body.documentIds.length > 0) {
-        await attachDocuments(context, workspaceId, body.documentIds, result);
+      // Attach any documents the visitor uploaded before submitting — by
+      // claim token, never by bare id. Done after the lead exists so an
+      // abandoned upload never has a lead to point at — the retention sweep
+      // collects those.
+      if (body.documentClaims.length > 0) {
+        await attachDocumentsByClaim(context, workspaceId, body.documentClaims, result);
       }
 
       return reply.status(201).send({
@@ -435,29 +449,5 @@ async function resolveServiceId(
       .where(and(eq(schema.services.slug, slug), isNull(schema.services.deletedAt)))
       .limit(1);
     return row?.id ?? null;
-  });
-}
-
-async function attachDocuments(
-  context: AppContext,
-  workspaceId: string,
-  documentIds: readonly string[],
-  result: { leadId: string; contactId: string },
-): Promise<void> {
-  await withWorkspace(context.db, workspaceId, async (tx) => {
-    for (const documentId of documentIds) {
-      await tx
-        .update(schema.documents)
-        .set({ leadId: result.leadId, contactId: result.contactId })
-        .where(
-          and(
-            eq(schema.documents.id, documentId),
-            // Only an unattached document may be claimed. Without this, a
-            // crafted submission could attach somebody else's transcript to
-            // its own lead and then read it from the dashboard.
-            isNull(schema.documents.leadId),
-          ),
-        );
-    }
   });
 }

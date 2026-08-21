@@ -15,6 +15,13 @@
       "when": 1787322774105,
       "tag": "0001_mfa_recovery_and_message_lead",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787350252634,
+      "tag": "0002_document_verification_lifecycle",
+      "breakpoints": true
     }
   ]
 }

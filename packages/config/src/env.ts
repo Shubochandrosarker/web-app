@@ -105,6 +105,15 @@ export const apiEnvSchema = z.object({
    * re-keys the rate limits and falsifies audit addresses.
    */
   API_TRUST_PROXY: z.string().default('loopback'),
+  /**
+   * Malware scanning for private documents. `clamav` needs a reachable
+   * clamd; `stub` flags only the EICAR test string (tests and local dev);
+   * `none` verifies but does not scan, and says so on every document.
+   */
+  DOCUMENT_SCANNER: z.enum(['clamav', 'stub', 'none']).default('none'),
+  CLAMAV_HOST: z.string().default('127.0.0.1'),
+  CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
+  CLAMAV_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(30_000),
   DASHBOARD_URL: z.url().optional(),
   /**
    * The public site's origin.

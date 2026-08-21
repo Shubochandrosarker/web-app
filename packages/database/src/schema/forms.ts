@@ -126,7 +126,25 @@ export const documents = pgTable(
     mimeType: varchar('mime_type', { length: 140 }).notNull(),
     sizeBytes: integer('size_bytes').notNull(),
     checksumSha256: varchar('checksum_sha256', { length: 64 }).notNull(),
+    /*
+     * The DB-level default stays 'uploaded' even though new rows begin life
+     * as 'pending_upload': Postgres refuses to *use* a new enum value in the
+     * transaction that adds it, so a migration could not both add the value
+     * and make it the default. Every insert sets status explicitly.
+     */
     status: documentStatus('status').notNull().default('uploaded'),
+    /**
+     * SHA-256 of the one-shot claim token issued with the upload URL.
+     *
+     * Possession of the token — not knowledge of the document id — is what
+     * lets a later form submission attach this document. Ids appear in
+     * network logs and error messages; the token appears exactly once, in
+     * the upload-authorisation response to whoever asked for it.
+     */
+    claimTokenHash: varchar('claim_token_hash', { length: 64 }),
+    /** When server-side verification (size, signature, checksum) passed. */
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    scannedAt: timestamp('scanned_at', { withTimezone: true }),
     scanResult: jsonb('scan_result')
       .notNull()
       .default(sql`'{}'::jsonb`),

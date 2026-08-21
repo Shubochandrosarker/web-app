@@ -22,6 +22,7 @@ import { registerPublicFormRoutes } from './routes/forms-public.ts';
 import { registerDocumentRoutes } from './routes/documents.ts';
 import { createOutboxHandler, registerInternalRoutes } from './routes/internal.ts';
 import { createEmailProvider, createWhatsappProvider } from './providers/notifications.ts';
+import { createScanner, type DocumentScanner } from './providers/scanner.ts';
 import { createStorage } from './providers/storage.ts';
 import { createDispatcher, type Dispatcher } from './services/dispatcher.ts';
 import { createLeadService } from './services/leads.ts';
@@ -48,6 +49,7 @@ export interface AppContext {
   readonly resolveWorkspaceId: (slug: string) => Promise<string>;
   readonly leads: ReturnType<typeof createLeadService>;
   readonly storage: ReturnType<typeof createStorage>;
+  readonly scanner: DocumentScanner;
 }
 
 export interface BuildAppOptions {
@@ -59,6 +61,10 @@ export interface BuildAppOptions {
   readonly enabledModules?: readonly ModuleId[];
   readonly database?: Database;
   readonly redis?: RedisClient;
+  /** Test seam: an in-memory storage double for the document lifecycle. */
+  readonly storage?: ReturnType<typeof createStorage>;
+  /** Test seam: a deterministic scanner. */
+  readonly scanner?: DocumentScanner;
 }
 
 export interface BuiltApp {
@@ -87,6 +93,8 @@ export function buildApp({
   enabledModules,
   database,
   redis: redisOverride,
+  storage: storageOverride,
+  scanner: scannerOverride,
 }: BuildAppOptions): BuiltApp {
   const warnings = assertProductionSafe(config);
 
@@ -238,10 +246,20 @@ export function buildApp({
 
   const email = createEmailProvider(config, app.log);
   const whatsapp = createWhatsappProvider(config, app.log);
-  const storage = createStorage(config, app.log);
+  const storage = storageOverride ?? createStorage(config, app.log);
+  const scanner = scannerOverride ?? createScanner(config, app.log);
   const leads = createLeadService({ db, redis, config });
 
-  const context: AppContext = { config, db, redis, auth, resolveWorkspaceId, leads, storage };
+  const context: AppContext = {
+    config,
+    db,
+    redis,
+    auth,
+    resolveWorkspaceId,
+    leads,
+    storage,
+    scanner,
+  };
 
   /* ------------------------------------------------------------- probes */
 
