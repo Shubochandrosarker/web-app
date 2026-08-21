@@ -473,6 +473,35 @@ describe('health and readiness', () => {
     assert.equal(body.checks.redis, 'ok');
   });
 
+  /*
+   * Asserting on the outbox depth, not merely that the endpoint answered.
+   *
+   * The query behind this had a syntax error and threw on every call. The
+   * readiness handler caught it and left the key out, so the endpoint returned
+   * 200 with database and redis both "ok" — and this suite passed, because it
+   * only ever checked those two. A dead-letter queue could have grown without
+   * limit and nothing would have said so.
+   *
+   * The numbers matter more than the keys: "unavailable" is what a broken
+   * check now reports, and it has to fail here rather than pass quietly.
+   */
+  it('reports how deep the outbox is, rather than staying silent about it', async () => {
+    const response = await harness.app.inject({ method: 'GET', url: '/ready' });
+    const body = response.json() as {
+      outbox:
+        | 'unavailable'
+        | { pending: number; dead: number; oldestPendingSeconds: number | null };
+    };
+
+    assert.notEqual(body.outbox, 'unavailable', 'the outbox health query failed');
+    const outbox = body.outbox as Exclude<typeof body.outbox, 'unavailable'>;
+    assert.equal(typeof outbox.pending, 'number');
+    assert.equal(typeof outbox.dead, 'number');
+    assert.ok(
+      outbox.oldestPendingSeconds === null || typeof outbox.oldestPendingSeconds === 'number',
+    );
+  });
+
   it('echoes a request id on every response', async () => {
     const response = await harness.app.inject({ method: 'GET', url: '/health' });
     assert.ok(response.headers['x-request-id'], 'expected a request id header');
