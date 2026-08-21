@@ -50,9 +50,8 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
     href: '/contacts',
     term: 'contact',
     permission: 'contacts.read',
-    pending: true,
   },
-  'crm.tasks': { group: 'CRM', href: '/tasks', permission: 'tasks.read', pending: true },
+  'crm.tasks': { group: 'CRM', href: '/tasks', label: 'Tasks', permission: 'tasks.read' },
   'marketing.cms': [
     { group: 'Content', href: '/content', permission: 'content.read' },
     { group: 'Content', href: '/media', label: 'Media', permission: 'media.read' },
@@ -87,8 +86,8 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
   'ops.documents': {
     group: 'Operations',
     href: '/documents',
+    label: 'Documents',
     permission: 'documents.read',
-    pending: true,
   },
   'ops.orders': {
     group: 'Operations',

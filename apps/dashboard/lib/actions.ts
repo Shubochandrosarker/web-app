@@ -274,7 +274,19 @@ export async function addLeadTask(leadId: string, formData: FormData): Promise<A
 export async function completeTask(taskId: string, leadId: string): Promise<ActionResult> {
   try {
     await apiFetch(`/v1/crm/tasks/${taskId}`, { method: 'PATCH', body: { status: 'done' } });
-    revalidatePath(`/leads/${leadId}`);
+    if (leadId) revalidatePath(`/leads/${leadId}`);
+    revalidatePath('/tasks');
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function reopenTask(taskId: string, leadId?: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/crm/tasks/${taskId}`, { method: 'PATCH', body: { status: 'open' } });
+    if (leadId) revalidatePath(`/leads/${leadId}`);
+    revalidatePath('/tasks');
     return { ok: true };
   } catch (error) {
     return { ok: false, message: describe(error) };
@@ -461,6 +473,36 @@ export async function createPreview(contentId: string): Promise<ActionResult> {
     });
     const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/+$/, '');
     return { ok: true, message: `${siteUrl}/preview?token=${encodeURIComponent(minted.token)}` };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/* -------------------------------------------------------------- documents */
+
+/**
+ * Mint a download link for a clean document.
+ *
+ * The URL comes back in `message`; it lives for minutes and every issuance is
+ * audited server-side before the URL exists.
+ */
+export async function requestDocumentDownload(documentId: string): Promise<ActionResult> {
+  try {
+    const minted = await apiFetch<{ url: string }>(`/v1/documents/${documentId}/download-url`, {
+      method: 'POST',
+      body: {},
+    });
+    return { ok: true, message: minted.url };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function removeDocument(documentId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/documents/${documentId}`, { method: 'DELETE' });
+    revalidatePath('/documents');
+    return { ok: true, message: 'Document deleted. The file is gone from storage.' };
   } catch (error) {
     return { ok: false, message: describe(error) };
   }

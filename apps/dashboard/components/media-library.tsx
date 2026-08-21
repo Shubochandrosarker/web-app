@@ -119,9 +119,12 @@ export function MediaLibrary({
                 aria-pressed={selected?.id === item.id}
               >
                 {item.url ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- the
-                  // dashboard shows small thumbnails of arbitrary library
-                  // images; the optimizer adds latency and nothing else here.
+                  /*
+                   * A plain <img>: the dashboard shows small thumbnails of
+                   * arbitrary library images, and the optimizer would add a
+                   * proxy hop and nothing else here.
+                   */
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={item.url} alt={item.alt ?? item.filename} loading="lazy" />
                 ) : (
                   <span className="media-cell-placeholder">{item.filename}</span>
