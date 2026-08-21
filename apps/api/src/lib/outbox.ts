@@ -203,8 +203,13 @@ export async function outboxHealth(db: Database): Promise<{
       select
         count(*) filter (where status = 'pending')                        as pending,
         count(*) filter (where status = 'dead')                           as dead,
-        extract(epoch from now() - min(available_at))
-          filter (where status = 'pending' and available_at <= now())     as oldest_seconds
+        -- FILTER attaches to an aggregate call, not to an expression wrapping
+        -- one, so it belongs inside the extract() rather than after it. It was
+        -- outside, which is a syntax error: this query never once ran.
+        extract(
+          epoch from now() - min(available_at)
+            filter (where status = 'pending' and available_at <= now())
+        )                                                                 as oldest_seconds
       from event_outbox
     `);
 

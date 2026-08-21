@@ -26,10 +26,20 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    // Turborepo runs tasks in a filtered environment: a variable not listed
+    // here or in globalEnv is not passed through, however it was set.
+    //
+    // Leaving TEST_DATABASE_URL off this list silently downgraded CI. The API
+    // suite fell back to DATABASE_URL — the migration owner, a superuser — and
+    // its row-level-security guard refused to run, so every API test failed.
+    // It passed locally only because it was run per-package rather than
+    // through `turbo run test`, which is what CI runs.
+    //
+    // Anything the suites read from the environment belongs here.
     "test": {
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"],
-      "env": ["DATABASE_URL"],
+      "env": ["DATABASE_URL", "TEST_DATABASE_URL", "REDIS_URL"],
       "cache": false
     },
     "clean": {

@@ -103,6 +103,17 @@ Everything here happens while the old site is still serving traffic.
       can read a student's transcript should not be protected by a password
       alone.
 - [ ] Content imported and published.
+- [ ] **At least one service published.** The provisioned service request form
+      has a required `service` select whose options come from the published
+      service catalogue. With an empty catalogue that select has nothing to
+      choose, and a required select with no options is a form nobody can
+      submit — the site looks finished and silently takes no leads.
+- [ ] **No fixture content anywhere.** `pnpm workspace:seed-smoke` writes pages
+      and a service that exist only so CI can walk the vertical slice; every
+      one of them says so in its own copy. If a page titled "Smoke test"
+      reaches production, something ran that script against the wrong database.
+      `select path, title from content_entries where title ilike 'smoke test%'`
+      should return nothing.
 - [ ] Redirects imported.
 - [ ] A backup taken, and **a restore drill completed** —
       `docs/deployment/backup-and-restore.md`. Deployment is not finished until

@@ -245,15 +245,23 @@ export function buildApp({
         return reply.status(503).send({ status: 'unavailable', checks });
       }
 
-      // Reported but not fatal: a backed-up outbox means messages are late,
-      // not that this instance should be taken out of rotation.
-      const outbox = await outboxHealth(db).catch(() => null);
-
-      return reply.status(200).send({
-        status: 'ready',
-        checks,
-        ...(outbox ? { outbox } : {}),
+      /*
+       * Reported but not fatal: a backed-up outbox means messages are late,
+       * not that this instance should be taken out of rotation.
+       *
+       * It says `unavailable` rather than dropping the key, and logs. Omitting
+       * it made a permanently broken check look exactly like a healthy one —
+       * the query had a syntax error and threw on every call, so this endpoint
+       * had never once reported an outbox depth, and nothing said so. A
+       * dead-letter queue nobody can see is the failure this check exists to
+       * prevent.
+       */
+      const outbox = await outboxHealth(db).catch((error: unknown) => {
+        app.log.error({ err: error }, 'Outbox health check failed');
+        return 'unavailable' as const;
       });
+
+      return reply.status(200).send({ status: 'ready', checks, outbox });
     },
   );
 

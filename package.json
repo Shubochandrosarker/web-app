@@ -23,6 +23,7 @@
     "lint:fix": "eslint . --fix",
     "smoke": "node --experimental-strip-types scripts/smoke.ts",
     "workspace:provision": "pnpm --filter @bos/api run provision",
+    "workspace:seed-smoke": "node --experimental-strip-types scripts/seed-smoke.ts",
     "check:readiness": "node --experimental-strip-types scripts/check-readiness.ts",
     "redirects:import": "node --experimental-strip-types scripts/redirects.ts import",
     "redirects:verify": "node --experimental-strip-types scripts/redirects.ts verify"

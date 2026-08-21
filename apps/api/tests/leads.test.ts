@@ -42,7 +42,7 @@ before(async () => {
 });
 
 after(async () => {
-  await harness.close();
+  await harness?.close();
 });
 
 function submission(overrides: Record<string, unknown> = {}) {

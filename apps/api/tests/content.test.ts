@@ -31,7 +31,7 @@ before(async () => {
 });
 
 after(async () => {
-  await harness.close();
+  await harness?.close();
 });
 
 describe('public content: only published is visible', () => {
