@@ -127,6 +127,27 @@ export async function createHarness(overrides: Partial<ApiConfig> = {}): Promise
   const db = createDatabase({ connectionString: config.DATABASE_URL, maxConnections: 5 });
   const redis = createRedis(config.REDIS_URL);
 
+  /*
+   * Everything past this point can throw, and by now a connection pool and a
+   * Redis client are open. Node does not exit while either is holding a
+   * socket, so a setup failure that leaves them open does not fail the run —
+   * it hangs it, until whatever timeout is furthest out kills the job. In CI
+   * that turned a thirty-second failure into a twenty-minute one and buried
+   * the error message at the top of a log nobody reaches.
+   *
+   * Failing loudly is the whole point of `assertRlsApplies`; it is worth
+   * making sure the failure can actually be seen.
+   */
+  try {
+    return await buildHarness(config, db, redis);
+  } catch (error) {
+    await closeRedis().catch(() => undefined);
+    await closeDatabase().catch(() => undefined);
+    throw error;
+  }
+}
+
+async function buildHarness(config: ApiConfig, db: Database, redis: RedisClient): Promise<Harness> {
   await assertRlsApplies(db);
 
   const { app } = buildApp({ config, database: db, redis });

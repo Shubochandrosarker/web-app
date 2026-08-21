@@ -58,8 +58,18 @@ psql -c "ALTER ROLE bos_app WITH LOGIN PASSWORD 'local-dev-password';"
 cp .env.example .env     # then fill it in, pointing DATABASE_URL at bos_app
 
 pnpm workspace:provision nuesheba --owner-email you@example.com
+
+# A provisioned tenant has a brand, a pipeline and a form, and no pages —
+# content is authored, not generated. For a stack you can actually click
+# through before writing any, add the fixture pages CI uses:
+pnpm workspace:seed-smoke nuesheba
+
 pnpm dev                 # site :3000 · dashboard :3001 · api :4000
 ```
+
+The fixture content says "Smoke test" in every heading, on purpose. Plausible
+placeholder copy is the kind that gets published by somebody who assumes the
+business wrote it.
 
 The application must connect as `bos_app`, **not** as the migration role. This
 is not a nicety: row-level security does not apply to a superuser, to a role
@@ -71,21 +81,22 @@ See [the database README](docs/database/README.md).
 
 ## Commands
 
-|                            |                                                        |
-| -------------------------- | ------------------------------------------------------ |
-| `pnpm dev`                 | All apps in watch mode                                 |
-| `pnpm build`               | Build everything (needs `BOS_WORKSPACE_SLUG`)          |
-| `pnpm lint`                | ESLint over every app and package                      |
-| `pnpm typecheck`           | Typecheck every package and app                        |
-| `pnpm test`                | Every suite, against a real Postgres and Redis         |
-| `pnpm format`              | Prettier                                               |
-| `pnpm db:generate`         | Generate a migration after a schema change             |
-| `pnpm db:migrate`          | Apply migrations, RLS and grants                       |
-| `pnpm workspace:provision` | Create or refresh a tenant from `configs/<slug>/`      |
-| `pnpm check:readiness`     | Fail if a tenant config still carries placeholder data |
-| `pnpm smoke`               | Smoke-test a deployment. Non-zero means do not ship    |
-| `pnpm redirects:import`    | Import a URL migration map                             |
-| `pnpm redirects:verify`    | Check the deployed site honours it, in one hop         |
+|                             |                                                        |
+| --------------------------- | ------------------------------------------------------ |
+| `pnpm dev`                  | All apps in watch mode                                 |
+| `pnpm build`                | Build everything (needs `BOS_WORKSPACE_SLUG`)          |
+| `pnpm lint`                 | ESLint over every app and package                      |
+| `pnpm typecheck`            | Typecheck every package and app                        |
+| `pnpm test`                 | Every suite, against a real Postgres and Redis         |
+| `pnpm format`               | Prettier                                               |
+| `pnpm db:generate`          | Generate a migration after a schema change             |
+| `pnpm db:migrate`           | Apply migrations, RLS and grants                       |
+| `pnpm workspace:provision`  | Create or refresh a tenant from `configs/<slug>/`      |
+| `pnpm workspace:seed-smoke` | Fixture pages for local dev and CI. Never production   |
+| `pnpm check:readiness`      | Fail if a tenant config still carries placeholder data |
+| `pnpm smoke`                | Smoke-test a deployment. Non-zero means do not ship    |
+| `pnpm redirects:import`     | Import a URL migration map                             |
+| `pnpm redirects:verify`     | Check the deployed site honours it, in one hop         |
 
 ## What is built
 

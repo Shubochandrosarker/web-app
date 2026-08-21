@@ -139,6 +139,171 @@ jobs:
         env:
           DATABASE_URL: postgresql://bos:bos@localhost:5432/bos_ci
 
+  # ---------------------------------------------------------------------------
+  # The vertical slice, end to end.
+  #
+  # The unit suites prove the pieces; this proves they are connected. It is the
+  # check that caught a PATCH silently wiping page bodies, a publish handler
+  # that revalidated nothing, a service-request form nobody could submit, and a
+  # redirect loop — none of which any unit test noticed, because each piece was
+  # individually correct.
+  #
+  # It was written before this job existed and had to be run by hand, which
+  # means it only ran when somebody remembered to.
+  # ---------------------------------------------------------------------------
+  smoke:
+    name: Vertical slice against a running stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bos
+          POSTGRES_PASSWORD: bos
+          POSTGRES_DB: bos_smoke
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://bos:bos@localhost:5432/bos_smoke
+      # The Postgres service container speaks plaintext. Without this, the API
+      # started with NODE_ENV=production would resolve DATABASE_SSL to
+      # verify-full and refuse to connect — the production default, which is
+      # correct there and wrong against a throwaway container here.
+      DATABASE_SSL: disable
+      REDIS_URL: redis://localhost:6379
+      BOS_WORKSPACE_SLUG: nuesheba
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+      NEXT_PUBLIC_DASHBOARD_URL: http://localhost:3001
+      # Test values, and only ever test values. Every one of these is a
+      # Wrangler or host secret in a real environment; see
+      # docs/deployment/environments.md.
+      AUTH_SESSION_SECRET: ci-session-secret-at-least-32-characters-long
+      EDGE_SHARED_SECRET: ci-edge-shared-secret-at-least-32-characters
+      ANALYTICS_HASH_SECRET: ci-analytics-secret-at-least-32-characters-ok
+      BOS_OWNER_PASSWORD: ci-owner-password-not-a-real-one
+      BOS_ALLOW_INDEXING: 'false'
+      EMAIL_FROM_ADDRESS: noreply@example.com
+      EMAIL_FROM_NAME: Business OS CI
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        run: pnpm run db:migrate
+
+      - name: Provision the reference tenant
+        run: pnpm run workspace:provision nuesheba
+
+      # A provisioned workspace has a brand, a pipeline and a form, and no
+      # pages — content is authored, not generated. This adds the fixture
+      # pages and the fixture service the smoke test walks. See the header of
+      # scripts/seed-smoke.ts for why the copy is deliberately worthless.
+      - name: Seed fixture content
+        run: pnpm run workspace:seed-smoke nuesheba
+
+      - name: Build
+        run: pnpm run build
+
+      # `next start` serves the build; `node --experimental-strip-types` runs
+      # the API from source rather than the bundle, because the bundle is
+      # covered by the deploy path and this job is about the slice.
+      - name: Start the API
+        run: |
+          cd apps/api
+          # Not NODE_ENV=production: the API refuses to start in production
+          # without a real email provider, a CAPTCHA key and a verified
+          # database certificate — none of which a throwaway CI stack has. The
+          # honest fix is to not claim to be production, rather than to weaken
+          # the guard that says so.
+          NODE_ENV=development LOG_LEVEL=warn API_PORT=4000 \
+            API_PUBLIC_URL=http://localhost:4000 \
+            API_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001 \
+            DASHBOARD_URL=http://localhost:3001 \
+            nohup node --experimental-strip-types src/server.ts > "$RUNNER_TEMP/api.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS http://localhost:4000/health > /dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::The API never became healthy."
+          cat "$RUNNER_TEMP/api.log"
+          exit 1
+
+      - name: Start the site
+        run: |
+          cd apps/site
+          NODE_ENV=production PORT=3000 \
+            nohup npx next start --port 3000 > "$RUNNER_TEMP/site.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS -o /dev/null http://localhost:3000/ && exit 0
+            sleep 1
+          done
+          echo "::error::The site never became reachable."
+          cat "$RUNNER_TEMP/site.log"
+          exit 1
+
+      - name: Start the dashboard
+        run: |
+          cd apps/dashboard
+          NODE_ENV=production PORT=3001 \
+            nohup npx next start --port 3001 > "$RUNNER_TEMP/dashboard.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS -o /dev/null http://localhost:3001/sign-in && exit 0
+            sleep 1
+          done
+          echo "::error::The dashboard never became reachable."
+          cat "$RUNNER_TEMP/dashboard.log"
+          exit 1
+
+      # `--submit-form` posts a real service request and asserts a lead exists
+      # afterwards. Nothing short of that exercises the path the business
+      # depends on.
+      - name: Walk the vertical slice
+        run: |
+          pnpm smoke \
+            --site http://localhost:3000 \
+            --api http://localhost:4000 \
+            --dashboard http://localhost:3001 \
+            --workspace nuesheba \
+            --service-path /services/smoke-test-service \
+            --submit-form
+
+      - name: Verify every redirect resolves in one hop
+        run: pnpm redirects:verify nuesheba --base http://localhost:3000
+
+      - name: Server logs
+        if: failure()
+        run: |
+          for name in api site dashboard; do
+            echo "::group::$name"
+            cat "$RUNNER_TEMP/$name.log" || true
+            echo "::endgroup::"
+          done
+
   tenant-config:
     name: Tenant configuration is production-ready
     runs-on: ubuntu-latest
