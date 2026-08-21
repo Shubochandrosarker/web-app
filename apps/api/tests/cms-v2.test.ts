@@ -178,7 +178,12 @@ describe('reference lists', () => {
     const viewer = await createMember(harness, 'viewer');
     const tokens = await login(harness, viewer.email);
 
-    for (const path of ['/v1/cms/services', '/v1/cms/forms', '/v1/cms/locations', '/v1/cms/people']) {
+    for (const path of [
+      '/v1/cms/services',
+      '/v1/cms/forms',
+      '/v1/cms/locations',
+      '/v1/cms/people',
+    ]) {
       const allowed = await harness.app.inject({
         method: 'GET',
         url: path,

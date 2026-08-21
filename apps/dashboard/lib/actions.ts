@@ -3,7 +3,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { ACCESS_COOKIE, apiFetch, ApiRequestError, REFRESH_COOKIE } from './api';
+import { ACCESS_COOKIE, apiFetch, apiUpload, ApiRequestError, REFRESH_COOKIE } from './api';
 
 /**
  * Server Actions.
@@ -463,6 +463,78 @@ export async function createPreview(contentId: string): Promise<ActionResult> {
     return { ok: true, message: `${siteUrl}/preview?token=${encodeURIComponent(minted.token)}` };
   } catch (error) {
     return { ok: false, message: describe(error) };
+  }
+}
+
+/* ------------------------------------------------------------------ media */
+
+export async function uploadMedia(formData: FormData): Promise<ActionResult & { id?: string }> {
+  const file = formData.get('file');
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, message: 'Choose an image to upload.' };
+  }
+
+  try {
+    const body = new FormData();
+    body.set('file', file, file.name);
+    const created = await apiUpload<{ id: string; deduplicated?: boolean }>('/v1/cms/media', body);
+    revalidatePath('/media');
+    return {
+      ok: true,
+      id: created.id,
+      message: created.deduplicated
+        ? 'That exact image was already in the library.'
+        : 'Image uploaded.',
+    };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function updateMedia(
+  mediaId: string,
+  input: { alt?: string; caption?: string },
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/cms/media/${mediaId}`, { method: 'PATCH', body: input });
+    revalidatePath('/media');
+    return { ok: true, message: 'Saved.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function deleteMedia(mediaId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/cms/media/${mediaId}`, { method: 'DELETE' });
+    revalidatePath('/media');
+    return { ok: true, message: 'Image deleted.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/* ------------------------------------------------------------------ forms */
+
+export async function saveForm(
+  formId: string | null,
+  definition: Record<string, unknown>,
+): Promise<ActionResult & { id?: string }> {
+  try {
+    if (formId) {
+      await apiFetch(`/v1/cms/forms/${formId}`, { method: 'PATCH', body: definition });
+      revalidatePath(`/forms/${formId}`);
+      revalidatePath('/forms');
+      return { ok: true, id: formId, message: 'Form saved.' };
+    }
+    const created = await apiFetch<{ id: string }>('/v1/cms/forms', {
+      method: 'POST',
+      body: definition,
+    });
+    revalidatePath('/forms');
+    return { ok: true, id: created.id, message: 'Form created.' };
+  } catch (error) {
+    return { ok: false, message: describe(error), ...fieldErrorsFrom(error) };
   }
 }
 

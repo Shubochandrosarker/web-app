@@ -20,6 +20,8 @@ import { registerCmsRoutes } from './routes/cms.ts';
 import { registerCmsReferenceRoutes } from './routes/cms-references.ts';
 import { registerCrmRoutes } from './routes/crm.ts';
 import { registerPublicFormRoutes } from './routes/forms-public.ts';
+import { registerFormAdminRoutes } from './routes/forms-admin.ts';
+import { registerMediaRoutes } from './routes/media.ts';
 import { registerDocumentRoutes } from './routes/documents.ts';
 import { createOutboxHandler, registerInternalRoutes } from './routes/internal.ts';
 import { createEmailProvider, createWhatsappProvider } from './providers/notifications.ts';
@@ -344,8 +346,12 @@ export function buildApp({
       });
       registerCmsRoutes(instance, ctx);
       registerCmsReferenceRoutes(instance, ctx);
+      registerMediaRoutes(instance, ctx);
     },
-    'marketing.forms': (instance, ctx) => registerPublicFormRoutes(instance, ctx),
+    'marketing.forms': (instance, ctx) => {
+      registerPublicFormRoutes(instance, ctx);
+      registerFormAdminRoutes(instance, ctx);
+    },
     'crm.leads': (instance, ctx) => registerCrmRoutes(instance, ctx),
     'ops.documents': (instance, ctx) => registerDocumentRoutes(instance, ctx),
   };

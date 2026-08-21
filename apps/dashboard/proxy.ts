@@ -17,7 +17,7 @@ export const config = {
   ],
 };
 
-function buildCsp(nonce: string, apiOrigin: string, isDev: boolean): string {
+function buildCsp(nonce: string, apiOrigin: string, mediaOrigin: string, isDev: boolean): string {
   const directives: Record<string, string[]> = {
     'default-src': ["'self'"],
     'script-src': [
@@ -32,7 +32,8 @@ function buildCsp(nonce: string, apiOrigin: string, isDev: boolean): string {
     // React sets inline styles on elements it renders, and a style attribute
     // cannot carry a nonce. An injected style can deface a screen, not execute.
     'style-src': ["'self'", "'unsafe-inline'"],
-    'img-src': ["'self'", 'data:'],
+    // The media library shows thumbnails from the CDN origin.
+    'img-src': ["'self'", 'data:', mediaOrigin].filter(Boolean),
     'font-src': ["'self'", 'data:'],
     // The MFA enrolment panel is the one place the browser calls the API
     // directly; everything else goes through a Server Action.
@@ -138,6 +139,7 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
   const csp = buildCsp(
     nonce,
     process.env.NEXT_PUBLIC_API_URL ?? '',
+    process.env.NEXT_PUBLIC_MEDIA_ORIGIN ?? '',
     process.env.NODE_ENV !== 'production',
   );
 

@@ -59,6 +59,45 @@ export interface ApiCallOptions {
   readonly accessToken?: string;
 }
 
+/**
+ * Multipart variant of {@link apiFetch}, for the media upload.
+ *
+ * Separate rather than a flag because the two share almost nothing: no JSON
+ * content type (the boundary header must come from the body), a longer
+ * timeout, and a FormData body passed through untouched.
+ */
+export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+  const jar = await cookies();
+  const token = jar.get(ACCESS_COOKIE)?.value;
+
+  const headers: Record<string, string> = { accept: 'application/json' };
+  if (token) headers.authorization = `Bearer ${token}`;
+  headers['x-bos-workspace'] = workspaceSlug();
+
+  const response = await fetch(`${apiUrl()}${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+    cache: 'no-store',
+    signal: AbortSignal.timeout(60_000),
+  });
+
+  const payload = (await response.json().catch(() => ({}))) as {
+    error?: { code?: string; message?: string; details?: unknown };
+  };
+
+  if (!response.ok) {
+    throw new ApiRequestError(
+      response.status,
+      payload.error?.code ?? 'request_failed',
+      payload.error?.message ?? `The API responded ${response.status}.`,
+      payload.error?.details,
+    );
+  }
+
+  return payload as T;
+}
+
 export async function apiFetch<T>(path: string, options: ApiCallOptions = {}): Promise<T> {
   const jar = await cookies();
   const token = options.accessToken ?? jar.get(ACCESS_COOKIE)?.value;

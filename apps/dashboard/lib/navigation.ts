@@ -35,13 +35,15 @@ interface NavEntry {
   readonly href: string;
   /** Vocabulary key, so the label follows the business type's language. */
   readonly term?: string;
+  /** Fixed label, for a screen the module registry has no name for. */
+  readonly label?: string;
   /** The permission a person needs before this link is worth showing them. */
   readonly permission: string;
   /** Not yet implemented; listed so the gap is visible rather than forgotten. */
   readonly pending?: boolean;
 }
 
-const NAV_MAP: Partial<Record<ModuleId, NavEntry>> = {
+const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
   'crm.leads': { group: 'CRM', href: '/leads', term: 'lead', permission: 'leads.read' },
   'crm.contacts': {
     group: 'CRM',
@@ -51,7 +53,10 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry>> = {
     pending: true,
   },
   'crm.tasks': { group: 'CRM', href: '/tasks', permission: 'tasks.read', pending: true },
-  'marketing.cms': { group: 'Content', href: '/content', permission: 'content.read' },
+  'marketing.cms': [
+    { group: 'Content', href: '/content', permission: 'content.read' },
+    { group: 'Content', href: '/media', label: 'Media', permission: 'media.read' },
+  ],
   'marketing.landing_pages': {
     group: 'Content',
     href: '/landing-pages',
@@ -61,8 +66,8 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry>> = {
   'marketing.forms': {
     group: 'Content',
     href: '/forms',
+    label: 'Forms',
     permission: 'forms.read',
-    pending: true,
   },
   'marketing.seo': { group: 'Content', href: '/seo', permission: 'seo.read', pending: true },
   'ops.services': {
@@ -159,28 +164,31 @@ export function buildNavigation(
   const groups = new Map<string, NavItem[]>();
 
   for (const moduleId of enabledModules) {
-    const entry = NAV_MAP[moduleId];
-    if (!entry) continue;
+    const mapped = NAV_MAP[moduleId];
+    if (!mapped) continue;
 
-    /*
-     * A link to a screen that does not exist is worse than a missing link: it
-     * reads as a broken product rather than an unfinished one. The entries
-     * stay in the map so the remaining work is visible in this file, and
-     * `includePending` exposes them for a roadmap view.
-     */
-    if (entry.pending && !options.includePending) continue;
+    for (const entry of Array.isArray(mapped) ? mapped : [mapped]) {
+      /*
+       * A link to a screen that does not exist is worse than a missing link:
+       * it reads as a broken product rather than an unfinished one. The
+       * entries stay in the map so the remaining work is visible in this
+       * file, and `includePending` exposes them for a roadmap view.
+       */
+      if (entry.pending && !options.includePending) continue;
 
-    if (!held.has(entry.permission)) continue;
+      if (!held.has(entry.permission)) continue;
 
-    // The label follows the business type's vocabulary: the same
-    // ops.scheduling module reads "Departures" for a tour operator and
-    // "Consultations" for an education service.
-    const base = MODULE_REGISTRY[moduleId].label;
-    const label = entry.term ? `${vocabularyFor(businessType, entry.term, base)}s` : base;
+      // The label follows the business type's vocabulary: the same
+      // ops.scheduling module reads "Departures" for a tour operator and
+      // "Consultations" for an education service.
+      const base = MODULE_REGISTRY[moduleId].label;
+      const label =
+        entry.label ?? (entry.term ? `${vocabularyFor(businessType, entry.term, base)}s` : base);
 
-    const items = groups.get(entry.group) ?? [];
-    items.push({ href: entry.href, label, moduleId });
-    groups.set(entry.group, items);
+      const items = groups.get(entry.group) ?? [];
+      items.push({ href: entry.href, label, moduleId });
+      groups.set(entry.group, items);
+    }
   }
 
   return GROUP_ORDER.filter((title) => groups.has(title)).map((title) => ({
@@ -192,7 +200,10 @@ export function buildNavigation(
 /** Which module-backed screens are still to be built. Used by the roadmap page. */
 export function pendingScreens(enabledModules: readonly ModuleId[]): readonly string[] {
   return enabledModules
-    .map((moduleId) => NAV_MAP[moduleId])
-    .filter((entry): entry is NavEntry => entry?.pending === true)
+    .flatMap((moduleId) => {
+      const mapped = NAV_MAP[moduleId];
+      return mapped ? (Array.isArray(mapped) ? mapped : [mapped]) : [];
+    })
+    .filter((entry) => entry.pending === true)
     .map((entry) => entry.href);
 }

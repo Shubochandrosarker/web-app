@@ -20,14 +20,14 @@ rather than re-litigated per task.
 | **TASK-107** | ~~Dashboard shell and auth flow~~       | 1     | 105        | ✅ done |
 | **TASK-108** | ~~Observability: logging, probes~~      | 1     | 104        | ✅ done |
 | **TASK-201** | ~~Content authoring API~~               | 2     | 105        | ✅ done |
-| TASK-202     | Section editor — per-field forms        | 2     | 201, 107   | 6 ◑     |
-| TASK-203     | Media library and image pipeline        | 2     | 201        | 4       |
+| **TASK-202** | ~~Section editor — per-field forms~~    | 2     | 201, 107   | ✅ done |
+| **TASK-203** | ~~Media library and image pipeline~~    | 2     | 201        | ✅ done |
 | **TASK-204** | ~~Cache tags, publish invalidation~~    | 2     | 201        | ✅ done |
 | **TASK-205** | ~~Remaining section renderers~~         | 2     | 103        | ✅ done |
 | **TASK-206** | ~~Design system from brand tokens~~     | 2     | 205        | ✅ done |
 | TASK-207     | SEO entity graph and JSON-LD wiring     | 2     | 201        | 4       |
 | **TASK-208** | ~~Sitemaps, redirects, IndexNow~~       | 2     | 201        | ✅ done |
-| TASK-209     | Form _builder_ UI (submission is done)  | 2     | 201        | 3 ◑     |
+| **TASK-209** | ~~Form _builder_ UI~~                   | 2     | 201        | ✅ done |
 | TASK-210     | WordPress content adapter               | 2     | 201        | 4       |
 | TASK-301     | NuESheba config, branding, navigation   | 3     | 206        | 2       |
 | TASK-302     | NuESheba service pages and guides       | 3     | 205, 301   | 6       |
