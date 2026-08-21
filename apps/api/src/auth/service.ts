@@ -338,32 +338,74 @@ export class AuthService {
   }
 
   /**
-   * Rotate a refresh token.
+   * Rotate a refresh token — atomically.
    *
-   * The reuse case is the interesting one. If the presented token belongs to a
-   * session that has already been replaced, one of two things happened: a
-   * client raced itself, or a token was stolen and both parties are now using
-   * it. They are indistinguishable from here, and only one of them is safe to
-   * ignore — so the whole chain is revoked.
+   * The whole check-and-rotate runs in **one transaction with the session row
+   * locked** (`SELECT … FOR UPDATE`). Two requests presenting the same token
+   * serialise on that lock: the first rotates; the second, re-reading the row
+   * after the first commits, finds it already replaced. Without the lock both
+   * would read "not yet replaced" and both would mint a session — a forked
+   * family, which is indistinguishable from a stolen token being used in
+   * parallel. A row lock works across any number of API instances, which an
+   * in-memory mutex would not.
+   *
+   * The reuse case is deliberately strict. A replaced token being presented
+   * means either a client raced itself or a token was stolen and both parties
+   * are now using it — indistinguishable from here, and only one of them is
+   * safe to ignore. A "grace window" for the race case would hand an attacker
+   * who wins the rotation race a session that survives the victim's replay,
+   * which is precisely the attack reuse detection exists to end. So any reuse
+   * revokes the entire family, in the same transaction that detected it. The
+   * dashboard avoids racing itself by single-flighting its refreshes.
    */
   async refresh(refreshToken: string, context: RequestContext): Promise<SessionTokens> {
     const tokenHash = hashToken(refreshToken);
+    const newRefreshToken = mintToken();
+    const now = new Date();
+    const refreshExpiresAt = new Date(now.getTime() + this.config.refreshTokenTtl * 1000);
 
-    const session = await withoutTenantScope(this.db, async (tx) => {
-      const [row] = await tx
+    const rotated = await withoutTenantScope(this.db, async (tx) => {
+      const [session] = await tx
         .select()
         .from(schema.sessions)
         .where(eq(schema.sessions.tokenHash, tokenHash))
+        .for('update')
         .limit(1);
-      return row;
+
+      if (!session) throw ApiError.unauthorized();
+
+      if (session.replacedBySessionId !== null) {
+        await this.revokeSessionFamilyTx(tx, session.id);
+        return { reuse: true as const, userId: session.userId, sessionId: session.id };
+      }
+
+      if (session.revokedAt !== null || session.expiresAt.getTime() <= Date.now()) {
+        throw ApiError.unauthorized();
+      }
+
+      const [created] = await tx
+        .insert(schema.sessions)
+        .values({
+          userId: session.userId,
+          tokenHash: hashToken(newRefreshToken),
+          userAgent: context.userAgent.slice(0, 1000),
+          ipAddress: context.ipAddress.slice(0, 45),
+          expiresAt: refreshExpiresAt,
+          lastSeenAt: now,
+        })
+        .returning({ id: schema.sessions.id });
+
+      await tx
+        .update(schema.sessions)
+        .set({ replacedBySessionId: created!.id, revokedAt: now })
+        .where(eq(schema.sessions.id, session.id));
+
+      return { reuse: false as const, userId: session.userId, sessionId: created!.id };
     });
 
-    if (!session) throw ApiError.unauthorized();
-
-    if (session.replacedBySessionId !== null) {
-      await this.revokeSessionFamily(session.id);
-      await this.audit(null, session.userId, 'auth.refresh_reuse_detected', context, {
-        sessionId: session.id,
+    if (rotated.reuse) {
+      await this.audit(null, rotated.userId, 'auth.refresh_reuse_detected', context, {
+        sessionId: rotated.sessionId,
       });
       throw new ApiError(
         401,
@@ -372,18 +414,23 @@ export class AuthService {
       );
     }
 
-    if (session.revokedAt !== null || session.expiresAt.getTime() <= Date.now()) {
-      throw ApiError.unauthorized();
-    }
-
-    const tokens = await this.createSession(session.userId, context, session.id);
-    await withoutTenantScope(this.db, (tx) =>
-      tx
-        .update(schema.sessions)
-        .set({ lastSeenAt: new Date() })
-        .where(eq(schema.sessions.id, tokens.sessionId)),
+    // The access token is minted only after the rotation has committed, so a
+    // rolled-back rotation cannot leave a live credential in the cache.
+    const accessToken = mintToken();
+    await this.redis.set(
+      `access:${hashToken(accessToken)}`,
+      JSON.stringify({ userId: rotated.userId, sessionId: rotated.sessionId }),
+      'EX',
+      this.config.accessTokenTtl,
     );
-    return tokens;
+
+    return {
+      accessToken,
+      accessTokenExpiresAt: new Date(Date.now() + this.config.accessTokenTtl * 1000),
+      refreshToken: newRefreshToken,
+      refreshTokenExpiresAt: refreshExpiresAt,
+      sessionId: rotated.sessionId,
+    };
   }
 
   /**
@@ -394,27 +441,34 @@ export class AuthService {
    * session.
    */
   private async revokeSessionFamily(sessionId: string): Promise<void> {
-    await withoutTenantScope(this.db, async (tx) => {
-      await tx.execute(sql`
-        with recursive family as (
-          select id, replaced_by_session_id
-          from sessions
-          where id = ${sessionId}::uuid
+    await withoutTenantScope(this.db, (tx) => this.revokeSessionFamilyTx(tx, sessionId));
+  }
 
-          union
+  /**
+   * Transaction-scoped variant, so `refresh` can revoke inside the same
+   * transaction that detected the reuse — a crash between detection and
+   * revocation must not leave the family alive.
+   */
+  private async revokeSessionFamilyTx(tx: Database, sessionId: string): Promise<void> {
+    await tx.execute(sql`
+      with recursive family as (
+        select id, replaced_by_session_id
+        from sessions
+        where id = ${sessionId}::uuid
 
-          select s.id, s.replaced_by_session_id
-          from sessions s
-          join family f
-            on s.id = f.replaced_by_session_id
-            or s.replaced_by_session_id = f.id
-        )
-        update sessions
-        set revoked_at = now()
-        where id in (select id from family)
-          and revoked_at is null
-      `);
-    });
+        union
+
+        select s.id, s.replaced_by_session_id
+        from sessions s
+        join family f
+          on s.id = f.replaced_by_session_id
+          or s.replaced_by_session_id = f.id
+      )
+      update sessions
+      set revoked_at = now()
+      where id in (select id from family)
+        and revoked_at is null
+    `);
   }
 
   async logout(refreshToken: string): Promise<void> {
@@ -444,6 +498,79 @@ export class AuthService {
         .where(and(eq(schema.sessions.userId, userId), isNull(schema.sessions.revokedAt)))
         .returning({ id: schema.sessions.id });
       return revoked.length;
+    });
+  }
+
+  /**
+   * The user's live sessions, for the "where am I signed in" screen.
+   *
+   * Rows are the user's own and only the user's own — the user id comes from
+   * the authenticated request, never from a parameter a client could vary.
+   */
+  async listSessions(
+    userId: string,
+    currentSessionId: string,
+  ): Promise<
+    readonly {
+      id: string;
+      userAgent: string;
+      ipAddress: string;
+      createdAt: Date;
+      lastSeenAt: Date | null;
+      expiresAt: Date;
+      current: boolean;
+    }[]
+  > {
+    return withoutTenantScope(this.db, async (tx) => {
+      const rows = await tx
+        .select({
+          id: schema.sessions.id,
+          userAgent: schema.sessions.userAgent,
+          ipAddress: schema.sessions.ipAddress,
+          createdAt: schema.sessions.createdAt,
+          lastSeenAt: schema.sessions.lastSeenAt,
+          expiresAt: schema.sessions.expiresAt,
+        })
+        .from(schema.sessions)
+        .where(
+          and(
+            eq(schema.sessions.userId, userId),
+            isNull(schema.sessions.revokedAt),
+            sql`${schema.sessions.expiresAt} > now()`,
+          ),
+        )
+        .orderBy(sql`${schema.sessions.lastSeenAt} desc nulls last`);
+
+      return rows.map((row) => ({
+        ...row,
+        userAgent: row.userAgent ?? '',
+        ipAddress: row.ipAddress ?? '',
+        current: row.id === currentSessionId,
+      }));
+    });
+  }
+
+  /**
+   * Revoke one of the user's own sessions.
+   *
+   * The WHERE carries both ids: a session id belonging to someone else
+   * matches zero rows, and the caller learns only "not found" — not whether
+   * the id exists.
+   */
+  async revokeSession(userId: string, sessionId: string): Promise<boolean> {
+    return withoutTenantScope(this.db, async (tx) => {
+      const revoked = await tx
+        .update(schema.sessions)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(schema.sessions.id, sessionId),
+            eq(schema.sessions.userId, userId),
+            isNull(schema.sessions.revokedAt),
+          ),
+        )
+        .returning({ id: schema.sessions.id });
+      return revoked.length > 0;
     });
   }
 

@@ -272,7 +272,13 @@ export async function createMember(
   return { userId, email };
 }
 
-/** Log in and return the tokens, so a test can act as that member. */
+/**
+ * Log in and return the tokens, so a test can act as that member.
+ *
+ * Uses the machine transport (`tokenTransport: 'body'`) — the explicit opt-in
+ * that puts tokens in JSON. The default browser transport returns no token at
+ * all, which `auth.test.ts` proves separately.
+ */
 export async function login(
   harness: Harness,
   email: string,
@@ -281,7 +287,7 @@ export async function login(
   const response = await harness.app.inject({
     method: 'POST',
     url: '/v1/auth/login',
-    payload: { email, password },
+    payload: { email, password, tokenTransport: 'body' },
   });
 
   const body = response.json() as { accessToken?: string; refreshToken?: string };

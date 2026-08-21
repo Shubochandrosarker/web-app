@@ -29,14 +29,28 @@ const passwordSchema = z
   .min(12, 'must be at least 12 characters')
   .max(200);
 
+/**
+ * How the caller wants its session credential delivered.
+ *
+ * `cookie` (the default) is the browser contract: `HttpOnly` cookies, and a
+ * response body that carries **no token at all** — a script that manages to
+ * run in the page has nothing to read. `body` is the machine contract: tokens
+ * in JSON, no cookies, for callers with no cookie jar (integrations, tests,
+ * the dashboard's own server). It must be asked for by name; a browser client
+ * that never sends it can never receive a readable token.
+ */
+const tokenTransport = z.enum(['cookie', 'body']).default('cookie');
+
 const loginBody = z.object({
   email: z.email().max(320),
   password: z.string().min(1).max(200),
+  tokenTransport,
 });
 
 const mfaBody = z.object({
   challengeToken: z.string().min(1).max(200),
   code: z.string().min(6).max(20),
+  tokenTransport,
 });
 
 export interface AuthRouteOptions {
@@ -99,6 +113,36 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     'Authentication entry point; throttled per account and per address.',
   );
 
+  /**
+   * Deliver a fresh session on the requested transport.
+   *
+   * Exactly one of the two happens: cookies with a token-free body, or tokens
+   * in the body with no cookie. Both at once — which is what this API used to
+   * do — hands a browser a script-readable refresh token alongside the
+   * `HttpOnly` one, and the `HttpOnly` is then decoration.
+   */
+  const deliverSession = (
+    reply: FastifyReply,
+    tokens: SessionTokens,
+    transport: 'cookie' | 'body',
+  ): Record<string, unknown> => {
+    if (transport === 'body') {
+      return {
+        accessToken: tokens.accessToken,
+        accessTokenExpiresAt: tokens.accessTokenExpiresAt.toISOString(),
+        refreshToken: tokens.refreshToken,
+        refreshTokenExpiresAt: tokens.refreshTokenExpiresAt.toISOString(),
+      };
+    }
+
+    setSessionCookies(reply, tokens);
+    return {
+      // Expiry metadata is not a credential: the client schedules its silent
+      // refresh from it, and cannot derive a token from a timestamp.
+      accessTokenExpiresAt: tokens.accessTokenExpiresAt.toISOString(),
+    };
+  };
+
   app.post('/v1/auth/login', { config: { bosAccess: publicAuth } }, async (request, reply) => {
     const body = loginBody.parse(request.body);
     const outcome = await auth.login(body.email, body.password, requestContext(request));
@@ -111,13 +155,10 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
       });
     }
 
-    setSessionCookies(reply, outcome.tokens);
     return reply.status(200).send({
       mfaRequired: false,
       user: outcome.user,
-      accessToken: outcome.tokens.accessToken,
-      accessTokenExpiresAt: outcome.tokens.accessTokenExpiresAt.toISOString(),
-      refreshToken: outcome.tokens.refreshToken,
+      ...deliverSession(reply, outcome.tokens, body.tokenTransport),
     });
   });
 
@@ -133,12 +174,9 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     // union is shared with `login` and this narrows it for the response.
     if (outcome.kind !== 'authenticated') throw ApiError.invalidCredentials();
 
-    setSessionCookies(reply, outcome.tokens);
     return reply.status(200).send({
       user: outcome.user,
-      accessToken: outcome.tokens.accessToken,
-      accessTokenExpiresAt: outcome.tokens.accessTokenExpiresAt.toISOString(),
-      refreshToken: outcome.tokens.refreshToken,
+      ...deliverSession(reply, outcome.tokens, body.tokenTransport),
     });
   });
 
@@ -158,25 +196,29 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     },
     async (request, reply) => {
       const fromCookie = (request.cookies as Record<string, string | undefined>)[REFRESH_COOKIE];
-      const fromBody = z
+      const parsed = z
         .object({ refreshToken: z.string().min(1).max(400).optional() })
-        .parse(request.body ?? {}).refreshToken;
+        .parse(request.body ?? {});
 
-      const token = fromCookie ?? fromBody;
+      const token = fromCookie ?? parsed.refreshToken;
       if (!token) throw ApiError.unauthorized();
+
+      /*
+       * The transport follows the credential: a caller that presented a body
+       * token gets body tokens back, one that presented the cookie gets
+       * rotated cookies. A cookie-presenting caller cannot opt into a body
+       * response — that would let injected script upgrade an unreadable
+       * session into a readable one with a single self-request.
+       */
+      const transport = fromCookie ? ('cookie' as const) : ('body' as const);
 
       try {
         const tokens = await auth.refresh(token, requestContext(request));
-        setSessionCookies(reply, tokens);
-        return reply.status(200).send({
-          accessToken: tokens.accessToken,
-          accessTokenExpiresAt: tokens.accessTokenExpiresAt.toISOString(),
-          refreshToken: tokens.refreshToken,
-        });
+        return reply.status(200).send(deliverSession(reply, tokens, transport));
       } catch (error) {
         // A dead session must not leave a stale cookie behind, or the browser
         // retries with it forever.
-        clearSessionCookies(reply);
+        if (fromCookie) clearSessionCookies(reply);
         throw error;
       }
     },
@@ -204,6 +246,44 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
       const count = await auth.logoutAll(requireUserId(request));
       clearSessionCookies(reply);
       return reply.status(200).send({ revokedSessions: count });
+    },
+  );
+
+  /* ------------------------------------------------------------- sessions */
+
+  app.get('/v1/auth/sessions', { config: { bosAccess: authenticatedRoute() } }, async (request) => {
+    const sessions = await auth.listSessions(requireUserId(request), request.auth?.sessionId ?? '');
+    return {
+      sessions: sessions.map((session) => ({
+        id: session.id,
+        userAgent: session.userAgent,
+        ipAddress: session.ipAddress,
+        createdAt: session.createdAt.toISOString(),
+        lastSeenAt: session.lastSeenAt?.toISOString() ?? null,
+        expiresAt: session.expiresAt.toISOString(),
+        current: session.current,
+      })),
+    };
+  });
+
+  app.delete(
+    '/v1/auth/sessions/:id',
+    { config: { bosAccess: authenticatedRoute() } },
+    async (request, reply) => {
+      const { id } = z.object({ id: z.uuid() }).parse(request.params);
+      const revoked = await auth.revokeSession(requireUserId(request), id);
+      if (!revoked) throw ApiError.notFound('Session');
+
+      await auth.audit(
+        null,
+        requireUserId(request),
+        'auth.session_revoked',
+        requestContext(request),
+        {
+          sessionId: id,
+        },
+      );
+      return reply.status(204).send();
     },
   );
 
@@ -371,6 +451,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
           token: z.string().min(1).max(400),
           fullName: z.string().min(1).max(200),
           password: passwordSchema,
+          tokenTransport,
         })
         .parse(request.body);
 
@@ -381,12 +462,7 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
         requestContext(request),
       );
 
-      setSessionCookies(reply, tokens);
-      return reply.status(201).send({
-        accessToken: tokens.accessToken,
-        accessTokenExpiresAt: tokens.accessTokenExpiresAt.toISOString(),
-        refreshToken: tokens.refreshToken,
-      });
+      return reply.status(201).send(deliverSession(reply, tokens, body.tokenTransport));
     },
   );
 }

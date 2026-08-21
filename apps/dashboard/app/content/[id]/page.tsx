@@ -3,6 +3,7 @@ import { apiFetch, ApiRequestError, can, getSession } from '@/lib/api';
 import { DashboardShell } from '@/components/shell';
 import { ContentEditor } from '@/components/content-editor';
 import { RelativeTime } from '@/components/relative-time';
+import type { ReferenceOptions } from '@/components/section-fields';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +22,9 @@ interface ContentDetail {
   readonly seo: {
     readonly title: string | null;
     readonly description: string | null;
+    readonly canonicalUrl: string | null;
     readonly noindex: boolean;
+    readonly nofollow: boolean;
   } | null;
 }
 
@@ -33,6 +36,53 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   } catch {
     return { title: 'Content' };
   }
+}
+
+/**
+ * The reference pickers' choices, fetched here — on the server, with the
+ * session — because the browser never talks to the API directly.
+ */
+async function loadReferenceOptions(): Promise<ReferenceOptions> {
+  const [services, forms, locations, people, content, media] = await Promise.all([
+    apiFetch<{ items: { id: string; name: string; slug: string }[] }>('/v1/cms/services').catch(
+      () => ({ items: [] }),
+    ),
+    apiFetch<{ items: { id: string; name: string; slug: string }[] }>('/v1/cms/forms').catch(
+      () => ({ items: [] }),
+    ),
+    apiFetch<{ items: { id: string; name: string; city: string }[] }>('/v1/cms/locations').catch(
+      () => ({ items: [] }),
+    ),
+    apiFetch<{ items: { id: string; name: string; role: string | null }[] }>(
+      '/v1/cms/people',
+    ).catch(() => ({ items: [] })),
+    apiFetch<{ items: { id: string; title: string; path: string }[] }>(
+      '/v1/cms/content?limit=100',
+    ).catch(() => ({ items: [] })),
+    apiFetch<{ items: { id: string; originalFilename: string; alt: string | null }[] }>(
+      '/v1/cms/media?limit=200',
+    ).catch(() => ({ items: [] })),
+  ]);
+
+  return {
+    services: services.items.map((item) => ({ id: item.id, label: item.name, detail: item.slug })),
+    forms: forms.items.map((item) => ({ id: item.id, label: item.name, detail: item.slug })),
+    locations: locations.items.map((item) => ({
+      id: item.id,
+      label: item.name,
+      detail: item.city,
+    })),
+    people: people.items.map((item) => ({
+      id: item.id,
+      label: item.name,
+      ...(item.role ? { detail: item.role } : {}),
+    })),
+    content: content.items.map((item) => ({ id: item.id, label: item.title, detail: item.path })),
+    media: media.items.map((item) => ({
+      id: item.id,
+      label: item.alt || item.originalFilename,
+    })),
+  };
 }
 
 export default async function ContentDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -49,11 +99,14 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
     throw error;
   }
 
-  const revisions = await apiFetch<{
-    items: { id: string; revision: number; title: string; createdAt: string }[];
-  }>(`/v1/cms/content/${id}/revisions`).catch(() => ({ items: [] }));
+  const [revisions, referenceOptions] = await Promise.all([
+    apiFetch<{
+      items: { id: string; revision: number; title: string | null; createdAt: string }[];
+    }>(`/v1/cms/content/${id}/revisions`).catch(() => ({ items: [] })),
+    loadReferenceOptions(),
+  ]);
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? '';
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/+$/, '');
 
   return (
     <DashboardShell session={session} businessType="education_service" current="/content">
@@ -78,67 +131,30 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
         ) : null}
       </div>
 
-      <div className="detail-grid">
-        <div className="detail-main">
-          <ContentEditor
-            contentId={entry.id}
-            title={entry.title}
-            excerpt={entry.excerpt ?? ''}
-            document={entry.document}
-            status={entry.status}
-            canWrite={can(session, 'content.write')}
-            canPublish={can(session, 'content.publish')}
-          />
-        </div>
-
-        <aside className="detail-side">
-          <section className="panel">
-            <h2>Search appearance</h2>
-            <dl className="detail-list">
-              <div>
-                <dt>Meta title</dt>
-                <dd>{entry.seo?.title ?? entry.title}</dd>
-              </div>
-              <div>
-                <dt>Meta description</dt>
-                <dd>{entry.seo?.description ?? entry.excerpt ?? 'Not set'}</dd>
-              </div>
-              <div>
-                <dt>Indexable</dt>
-                <dd>{entry.seo?.noindex ? 'No — marked noindex' : 'Yes'}</dd>
-              </div>
-            </dl>
-            {/*
-              A reminder rather than a control. `BOS_ALLOW_INDEXING` is a
-              deployment switch, and an editor toggling it from here would be a
-              staging site indexed by accident.
-            */}
-            <p className="muted">
-              A page is only indexable when the deployment also has indexing switched on.
-            </p>
-          </section>
-
-          <section className="panel">
-            <h2>History</h2>
-            {revisions.items.length === 0 ? (
-              <p className="muted">No revisions yet. One is taken on every save.</p>
-            ) : (
-              <ol className="timeline">
-                {revisions.items.slice(0, 10).map((revision) => (
-                  <li key={revision.id}>
-                    <p>
-                      Revision {revision.revision} — {revision.title}
-                    </p>
-                    <p className="muted">
-                      <RelativeTime iso={revision.createdAt} />
-                    </p>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </section>
-        </aside>
-      </div>
+      <ContentEditor
+        contentId={entry.id}
+        title={entry.title}
+        excerpt={entry.excerpt ?? ''}
+        document={entry.document}
+        status={entry.status}
+        path={entry.path}
+        siteUrl={siteUrl}
+        seo={{
+          title: entry.seo?.title ?? '',
+          description: entry.seo?.description ?? '',
+          canonicalUrl: entry.seo?.canonicalUrl ?? '',
+          noindex: entry.seo?.noindex ?? false,
+          nofollow: entry.seo?.nofollow ?? false,
+        }}
+        revisions={revisions.items.map((revision) => ({
+          revision: revision.revision,
+          title: revision.title,
+          createdAt: revision.createdAt,
+        }))}
+        referenceOptions={referenceOptions}
+        canWrite={can(session, 'content.write')}
+        canPublish={can(session, 'content.publish')}
+      />
     </DashboardShell>
   );
 }

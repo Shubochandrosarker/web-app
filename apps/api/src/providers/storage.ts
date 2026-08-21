@@ -1,6 +1,7 @@
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -49,6 +50,18 @@ export interface Storage {
     objectKey: string;
     filename: string;
   }): Promise<{ url: string; expiresAt: Date }>;
+  /**
+   * What actually landed in the bucket — size and stored content type — or
+   * null when nothing did. The verification step trusts this, not the
+   * uploader's declaration.
+   */
+  headPrivateObject(objectKey: string): Promise<{ sizeBytes: number; contentType: string } | null>;
+  /**
+   * The object's bytes, for signature inspection, checksumming and the
+   * malware scan. `maxBytes` bounds memory: an object larger than the
+   * declared ceiling has already failed verification and is not read.
+   */
+  getPrivateObjectBytes(objectKey: string, maxBytes: number): Promise<Uint8Array | null>;
   putPublicObject(input: {
     objectKey: string;
     body: Uint8Array;
@@ -79,6 +92,12 @@ class UnconfiguredStorage implements Storage {
     this.fail();
   }
   async signPrivateDownload(): Promise<{ url: string; expiresAt: Date }> {
+    this.fail();
+  }
+  async headPrivateObject(): Promise<{ sizeBytes: number; contentType: string } | null> {
+    this.fail();
+  }
+  async getPrivateObjectBytes(): Promise<Uint8Array | null> {
     this.fail();
   }
   async putPublicObject(): Promise<void> {
@@ -167,6 +186,43 @@ class R2Storage implements Storage {
 
     const url = await getSignedUrl(this.client, command, { expiresIn: this.ttl });
     return { url, expiresAt: new Date(Date.now() + this.ttl * 1000) };
+  }
+
+  async headPrivateObject(
+    objectKey: string,
+  ): Promise<{ sizeBytes: number; contentType: string } | null> {
+    try {
+      const head = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.privateBucket, Key: objectKey }),
+      );
+      return {
+        sizeBytes: head.ContentLength ?? 0,
+        contentType: head.ContentType ?? 'application/octet-stream',
+      };
+    } catch (error) {
+      if ((error as { name?: string }).name === 'NotFound') return null;
+      throw error;
+    }
+  }
+
+  async getPrivateObjectBytes(objectKey: string, maxBytes: number): Promise<Uint8Array | null> {
+    try {
+      const object = await this.client.send(
+        new GetObjectCommand({
+          Bucket: this.privateBucket,
+          Key: objectKey,
+          // Range-capped: if something larger than the ceiling arrived, the
+          // size check has already failed it and there is no reason to pull
+          // the rest into memory.
+          Range: `bytes=0-${maxBytes - 1}`,
+        }),
+      );
+      const bytes = await object.Body?.transformToByteArray();
+      return bytes ?? null;
+    } catch (error) {
+      if ((error as { name?: string }).name === 'NoSuchKey') return null;
+      throw error;
+    }
   }
 
   async putPublicObject(input: {

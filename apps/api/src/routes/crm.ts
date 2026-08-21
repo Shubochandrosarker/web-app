@@ -678,4 +678,228 @@ export function registerCrmRoutes(app: FastifyInstance, context: AppContext): vo
       };
     },
   );
+
+  /* -------------------------------------------------------------- contacts */
+
+  app.get(
+    '/v1/crm/contacts',
+    { config: { bosAccess: requirePermission('contacts.read') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      const query = z
+        .object({
+          search: z.string().max(200).optional(),
+          consent: z.enum(['given', 'none']).optional(),
+          limit: z.coerce.number().int().min(1).max(100).default(25),
+          cursor: z.string().max(512).optional(),
+        })
+        .parse(request.query);
+
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        const conditions = [isNull(schema.contacts.deletedAt)];
+        if (query.search) {
+          conditions.push(
+            sql`(${schema.contacts.fullName} ilike ${`%${query.search}%`}
+              or ${schema.contacts.phone} ilike ${`%${query.search}%`}
+              or ${schema.contacts.email} ilike ${`%${query.search}%`})`,
+          );
+        }
+        if (query.consent === 'given') {
+          conditions.push(sql`${schema.contacts.marketingConsentAt} is not null`);
+        }
+        if (query.consent === 'none') {
+          conditions.push(isNull(schema.contacts.marketingConsentAt));
+        }
+
+        const cursorClause = query.cursor
+          ? cursorCondition(
+              schema.contacts.createdAt,
+              schema.contacts.id,
+              decodeCursor(query.cursor),
+              'desc',
+            )
+          : undefined;
+
+        const rows = await tx
+          .select({
+            id: schema.contacts.id,
+            fullName: schema.contacts.fullName,
+            email: schema.contacts.email,
+            phone: schema.contacts.phone,
+            whatsapp: schema.contacts.whatsapp,
+            marketingConsentAt: schema.contacts.marketingConsentAt,
+            lastActivityAt: schema.contacts.lastActivityAt,
+            createdAt: schema.contacts.createdAt,
+            /*
+             * The correlated reference is written out rather than interpolated:
+             * Drizzle renders an embedded column as a bare `"id"` here, which
+             * inside the subquery resolves to `leads.id` — a count of rows
+             * whose contact_id equals their own id, i.e. zero, forever.
+             */
+            leadCount: sql<number>`(
+              select count(*)::int from leads
+              where leads.contact_id = contacts.id and leads.deleted_at is null
+            )`,
+          })
+          .from(schema.contacts)
+          .where(withCursor(conditions, cursorClause))
+          .orderBy(...orderFor(schema.contacts.createdAt, schema.contacts.id, 'desc'))
+          .limit(query.limit + 1);
+
+        const page = buildPage(rows, query.limit, (row) => ({
+          value: row.createdAt.toISOString(),
+          id: row.id,
+        }));
+
+        return {
+          items: page.items.map((row) => ({
+            ...row,
+            marketingConsentAt: row.marketingConsentAt?.toISOString() ?? null,
+            lastActivityAt: row.lastActivityAt?.toISOString() ?? null,
+            createdAt: row.createdAt.toISOString(),
+          })),
+          ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+        };
+      });
+    },
+  );
+
+  /* ----------------------------------------------------------------- tasks */
+
+  app.get(
+    '/v1/crm/tasks',
+    { config: { bosAccess: requirePermission('tasks.read') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      const userId = requireUserId(request);
+      const query = z
+        .object({
+          assigned: z.enum(['me', 'anyone']).default('anyone'),
+          due: z.enum(['overdue', 'today', 'upcoming']).optional(),
+          status: z.enum(['open', 'done']).default('open'),
+          limit: z.coerce.number().int().min(1).max(200).default(100),
+        })
+        .parse(request.query);
+
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        const conditions = [
+          query.status === 'done'
+            ? eq(schema.tasks.status, 'done')
+            : eq(schema.tasks.status, 'open'),
+        ];
+        if (query.assigned === 'me') {
+          conditions.push(eq(schema.tasks.assignedToUserId, userId));
+        }
+        if (query.due === 'overdue') {
+          conditions.push(sql`${schema.tasks.dueAt} < now()`);
+        }
+        if (query.due === 'today') {
+          conditions.push(
+            sql`${schema.tasks.dueAt} >= date_trunc('day', now()) and ${schema.tasks.dueAt} < date_trunc('day', now()) + interval '1 day'`,
+          );
+        }
+        if (query.due === 'upcoming') {
+          conditions.push(sql`${schema.tasks.dueAt} >= date_trunc('day', now())`);
+        }
+
+        const rows = await tx
+          .select({
+            id: schema.tasks.id,
+            title: schema.tasks.title,
+            status: schema.tasks.status,
+            dueAt: schema.tasks.dueAt,
+            assignedToUserId: schema.tasks.assignedToUserId,
+            entityType: schema.tasks.entityType,
+            entityId: schema.tasks.entityId,
+            leadTitle: schema.leads.title,
+            createdAt: schema.tasks.createdAt,
+            overdue: sql<boolean>`(${schema.tasks.status} = 'open' and ${schema.tasks.dueAt} < now())`,
+          })
+          .from(schema.tasks)
+          // Tasks attach polymorphically; today the only entity is a lead.
+          .leftJoin(
+            schema.leads,
+            and(eq(schema.tasks.entityType, 'lead'), eq(schema.leads.id, schema.tasks.entityId)),
+          )
+          .where(and(...conditions))
+          .orderBy(sql`${schema.tasks.dueAt} asc nulls last`, desc(schema.tasks.createdAt))
+          .limit(query.limit);
+
+        return {
+          items: rows.map((row) => ({
+            id: row.id,
+            title: row.title,
+            status: row.status,
+            dueAt: row.dueAt?.toISOString() ?? null,
+            assignedToUserId: row.assignedToUserId,
+            leadId: row.entityType === 'lead' ? row.entityId : null,
+            leadTitle: row.leadTitle,
+            createdAt: row.createdAt.toISOString(),
+            overdue: row.overdue,
+          })),
+        };
+      });
+    },
+  );
+
+  /* -------------------------------------------------------------- overview */
+
+  /**
+   * The numbers behind the home dashboard — every one a real count from this
+   * workspace's rows, never a placeholder. One round trip, because the home
+   * screen is the most-loaded page in the product.
+   */
+  app.get(
+    '/v1/crm/overview',
+    { config: { bosAccess: requirePermission('leads.read') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      const userId = requireUserId(request);
+
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        const result = await tx.execute<{
+          new_leads_today: number;
+          unassigned_leads: number;
+          follow_ups_due: number;
+          overdue_tasks: number;
+          my_open_tasks: number;
+          documents_awaiting: number;
+          leads_this_week: number;
+          leads_previous_week: number;
+        }>(sql`
+          select
+            (select count(*)::int from leads
+              where deleted_at is null and created_at >= date_trunc('day', now())) as new_leads_today,
+            (select count(*)::int from leads
+              where deleted_at is null and status = 'open' and assigned_to_user_id is null) as unassigned_leads,
+            (select count(*)::int from leads
+              where deleted_at is null and status = 'open' and follow_up_at <= now()) as follow_ups_due,
+            (select count(*)::int from tasks
+              where status = 'open' and due_at < now()) as overdue_tasks,
+            (select count(*)::int from tasks
+              where status = 'open' and assigned_to_user_id = ${userId}::uuid) as my_open_tasks,
+            (select count(*)::int from documents
+              where deleted_at is null and status in ('uploaded', 'scanning')) as documents_awaiting,
+            (select count(*)::int from leads
+              where deleted_at is null and created_at >= now() - interval '7 days') as leads_this_week,
+            (select count(*)::int from leads
+              where deleted_at is null
+                and created_at >= now() - interval '14 days'
+                and created_at < now() - interval '7 days') as leads_previous_week
+        `);
+        const row = result.rows[0];
+
+        return {
+          newLeadsToday: row?.new_leads_today ?? 0,
+          unassignedLeads: row?.unassigned_leads ?? 0,
+          followUpsDue: row?.follow_ups_due ?? 0,
+          overdueTasks: row?.overdue_tasks ?? 0,
+          myOpenTasks: row?.my_open_tasks ?? 0,
+          documentsAwaiting: row?.documents_awaiting ?? 0,
+          leadsThisWeek: row?.leads_this_week ?? 0,
+          leadsPreviousWeek: row?.leads_previous_week ?? 0,
+        };
+      });
+    },
+  );
 }

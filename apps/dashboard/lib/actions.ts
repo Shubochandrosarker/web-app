@@ -3,7 +3,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { ACCESS_COOKIE, apiFetch, ApiRequestError, REFRESH_COOKIE } from './api';
+import { ACCESS_COOKIE, apiFetch, apiUpload, ApiRequestError, REFRESH_COOKIE } from './api';
 
 /**
  * Server Actions.
@@ -43,7 +43,8 @@ async function adoptSession(setCookieHeaders: string[]): Promise<void> {
   const isProduction = process.env.NODE_ENV === 'production';
 
   for (const header of setCookieHeaders) {
-    const [pair] = header.split(';');
+    const parts = header.split(';').map((part) => part.trim());
+    const [pair, ...attributes] = parts;
     const separator = pair?.indexOf('=') ?? -1;
     if (!pair || separator === -1) continue;
 
@@ -51,12 +52,23 @@ async function adoptSession(setCookieHeaders: string[]): Promise<void> {
     const value = pair.slice(separator + 1);
     if (name !== ACCESS_COOKIE && name !== REFRESH_COOKIE) continue;
 
+    // The API decides how long its tokens live; the dashboard's cookie must
+    // expire in step or the browser presents a token the server has already
+    // let die. Parsed from the API's own Set-Cookie rather than duplicated.
+    let maxAge = name === REFRESH_COOKIE ? 2_592_000 : 900;
+    for (const attribute of attributes) {
+      const [attrName, attrValue] = attribute.split('=');
+      if (attrName?.toLowerCase() === 'max-age' && Number(attrValue) > 0) {
+        maxAge = Number(attrValue);
+      }
+    }
+
     jar.set(name, value, {
       httpOnly: true,
       secure: isProduction,
       sameSite: 'lax',
       path: '/',
-      maxAge: name === REFRESH_COOKIE ? 2_592_000 : 900,
+      maxAge,
     });
   }
 }
@@ -142,6 +154,35 @@ export async function signOut(): Promise<void> {
     }).catch(() => undefined);
   }
 
+  jar.delete(ACCESS_COOKIE);
+  jar.delete(REFRESH_COOKIE);
+  redirect('/sign-in');
+}
+
+/* ---------------------------------------------------------------- sessions */
+
+export async function revokeSession(sessionId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/auth/sessions/${sessionId}`, {
+      method: 'DELETE',
+      workspaceScoped: false,
+    });
+    revalidatePath('/settings');
+    return { ok: true, message: 'That session has been signed out.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function signOutEverywhere(): Promise<void> {
+  try {
+    await apiFetch('/v1/auth/logout-all', { method: 'POST', workspaceScoped: false });
+  } catch {
+    // The local cookies are cleared regardless; a failed call must not leave
+    // somebody apparently signed in on this device.
+  }
+
+  const jar = await cookies();
   jar.delete(ACCESS_COOKIE);
   jar.delete(REFRESH_COOKIE);
   redirect('/sign-in');
@@ -233,7 +274,19 @@ export async function addLeadTask(leadId: string, formData: FormData): Promise<A
 export async function completeTask(taskId: string, leadId: string): Promise<ActionResult> {
   try {
     await apiFetch(`/v1/crm/tasks/${taskId}`, { method: 'PATCH', body: { status: 'done' } });
-    revalidatePath(`/leads/${leadId}`);
+    if (leadId) revalidatePath(`/leads/${leadId}`);
+    revalidatePath('/tasks');
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function reopenTask(taskId: string, leadId?: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/crm/tasks/${taskId}`, { method: 'PATCH', body: { status: 'open' } });
+    if (leadId) revalidatePath(`/leads/${leadId}`);
+    revalidatePath('/tasks');
     return { ok: true };
   } catch (error) {
     return { ok: false, message: describe(error) };
@@ -256,32 +309,57 @@ export async function setContentStatus(
   }
 }
 
-export async function saveContent(contentId: string, formData: FormData): Promise<ActionResult> {
-  const title = String(formData.get('title') ?? '').trim();
-  const excerpt = String(formData.get('excerpt') ?? '').trim();
-  const documentJson = String(formData.get('document') ?? '');
+export interface ContentPayload {
+  readonly title: string;
+  readonly excerpt: string;
+  readonly document: { sections: unknown[] };
+  readonly seo?: {
+    readonly title: string;
+    readonly description: string;
+    readonly canonicalUrl: string;
+    readonly noindex: boolean;
+    readonly nofollow: boolean;
+  };
+}
 
+export async function saveContent(
+  contentId: string,
+  payload: ContentPayload,
+  options: { autosave?: boolean } = {},
+): Promise<ActionResult> {
+  const title = payload.title.trim();
   if (!title) return { ok: false, message: 'A page needs a title.' };
-
-  let document: unknown;
-  try {
-    document = JSON.parse(documentJson);
-  } catch {
-    return {
-      ok: false,
-      message: 'The section document is not valid JSON.',
-      fieldErrors: { document: 'Check for a missing comma or bracket.' },
-    };
-  }
 
   try {
     const result = await apiFetch<{ warnings?: string[] }>(`/v1/cms/content/${contentId}`, {
       method: 'PATCH',
-      body: { title, excerpt, document },
+      body: {
+        title,
+        excerpt: payload.excerpt.trim(),
+        document: payload.document,
+        ...(payload.seo
+          ? {
+              seo: {
+                title: payload.seo.title.trim() || undefined,
+                description: payload.seo.description.trim() || undefined,
+                canonicalUrl: payload.seo.canonicalUrl.trim() || undefined,
+                noindex: payload.seo.noindex,
+                nofollow: payload.seo.nofollow,
+              },
+            }
+          : {}),
+      },
     });
 
-    revalidatePath(`/content/${contentId}`);
-    revalidatePath('/content');
+    /*
+     * Autosaves do not revalidate: refreshing the RSC tree under an editor
+     * mid-thought replaces the form they are typing into. The explicit save
+     * refreshes the list and detail views like any other mutation.
+     */
+    if (!options.autosave) {
+      revalidatePath(`/content/${contentId}`);
+      revalidatePath('/content');
+    }
 
     // Sanitisation warnings are surfaced rather than swallowed: an editor whose
     // link was dropped should be told which one and why.
@@ -291,6 +369,231 @@ export async function saveContent(contentId: string, formData: FormData): Promis
         ? { message: result.warnings.join(' ') }
         : {}),
     };
+  } catch (error) {
+    return { ok: false, message: describe(error), ...fieldErrorsFrom(error) };
+  }
+}
+
+export async function createContent(input: {
+  type: string;
+  title: string;
+  slug: string;
+  path: string;
+  locale: string;
+}): Promise<ActionResult & { id?: string }> {
+  try {
+    const created = await apiFetch<{ id: string }>('/v1/cms/content', {
+      method: 'POST',
+      body: {
+        type: input.type,
+        title: input.title,
+        slug: input.slug,
+        path: input.path,
+        locale: input.locale,
+        document: { sections: [] },
+      },
+    });
+    revalidatePath('/content');
+    return { ok: true, id: created.id };
+  } catch (error) {
+    return { ok: false, message: describe(error), ...fieldErrorsFrom(error) };
+  }
+}
+
+export async function duplicateContent(contentId: string): Promise<ActionResult & { id?: string }> {
+  try {
+    const source = await apiFetch<{
+      type: string;
+      title: string;
+      slug: string;
+      path: string;
+      locale: string;
+      excerpt: string | null;
+      document: unknown;
+    }>(`/v1/cms/content/${contentId}`);
+
+    const suffix = `-copy-${Date.now().toString(36).slice(-4)}`;
+    const created = await apiFetch<{ id: string }>('/v1/cms/content', {
+      method: 'POST',
+      body: {
+        type: source.type,
+        title: `${source.title} (copy)`,
+        slug: `${source.slug}${suffix}`,
+        path: `${source.path}${suffix}`,
+        locale: source.locale,
+        excerpt: source.excerpt ?? undefined,
+        document: source.document,
+      },
+    });
+    revalidatePath('/content');
+    return { ok: true, id: created.id, message: 'Page duplicated as a draft.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function archiveContent(contentId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/cms/content/${contentId}/status`, {
+      method: 'POST',
+      body: { status: 'archived' },
+    });
+    revalidatePath('/content');
+    revalidatePath(`/content/${contentId}`);
+    return { ok: true, message: 'Page archived.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function restoreRevision(contentId: string, revision: number): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/cms/content/${contentId}/revisions/${revision}/restore`, {
+      method: 'POST',
+      body: {},
+    });
+    revalidatePath(`/content/${contentId}`);
+    return { ok: true, message: `Revision ${revision} restored.` };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/**
+ * Mint a preview link for a draft.
+ *
+ * Returns the URL in `message` — the one field ActionResult carries — so the
+ * client can open it. The token inside it dies on its own in minutes.
+ */
+export async function createPreview(contentId: string): Promise<ActionResult> {
+  try {
+    const minted = await apiFetch<{ token: string }>(`/v1/cms/content/${contentId}/preview-token`, {
+      method: 'POST',
+      body: {},
+    });
+    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/+$/, '');
+    return { ok: true, message: `${siteUrl}/preview?token=${encodeURIComponent(minted.token)}` };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/* --------------------------------------------------------- communications */
+
+export async function sendLeadWhatsapp(
+  leadId: string,
+  templateSlug: string,
+  variables: readonly string[],
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/crm/leads/${leadId}/whatsapp`, {
+      method: 'POST',
+      body: { templateSlug, variables },
+    });
+    revalidatePath(`/leads/${leadId}`);
+    return { ok: true, message: 'Message sent.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/* -------------------------------------------------------------- documents */
+
+/**
+ * Mint a download link for a clean document.
+ *
+ * The URL comes back in `message`; it lives for minutes and every issuance is
+ * audited server-side before the URL exists.
+ */
+export async function requestDocumentDownload(documentId: string): Promise<ActionResult> {
+  try {
+    const minted = await apiFetch<{ url: string }>(`/v1/documents/${documentId}/download-url`, {
+      method: 'POST',
+      body: {},
+    });
+    return { ok: true, message: minted.url };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function removeDocument(documentId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/documents/${documentId}`, { method: 'DELETE' });
+    revalidatePath('/documents');
+    return { ok: true, message: 'Document deleted. The file is gone from storage.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/* ------------------------------------------------------------------ media */
+
+export async function uploadMedia(formData: FormData): Promise<ActionResult & { id?: string }> {
+  const file = formData.get('file');
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, message: 'Choose an image to upload.' };
+  }
+
+  try {
+    const body = new FormData();
+    body.set('file', file, file.name);
+    const created = await apiUpload<{ id: string; deduplicated?: boolean }>('/v1/cms/media', body);
+    revalidatePath('/media');
+    return {
+      ok: true,
+      id: created.id,
+      message: created.deduplicated
+        ? 'That exact image was already in the library.'
+        : 'Image uploaded.',
+    };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function updateMedia(
+  mediaId: string,
+  input: { alt?: string; caption?: string },
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/cms/media/${mediaId}`, { method: 'PATCH', body: input });
+    revalidatePath('/media');
+    return { ok: true, message: 'Saved.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function deleteMedia(mediaId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/cms/media/${mediaId}`, { method: 'DELETE' });
+    revalidatePath('/media');
+    return { ok: true, message: 'Image deleted.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/* ------------------------------------------------------------------ forms */
+
+export async function saveForm(
+  formId: string | null,
+  definition: Record<string, unknown>,
+): Promise<ActionResult & { id?: string }> {
+  try {
+    if (formId) {
+      await apiFetch(`/v1/cms/forms/${formId}`, { method: 'PATCH', body: definition });
+      revalidatePath(`/forms/${formId}`);
+      revalidatePath('/forms');
+      return { ok: true, id: formId, message: 'Form saved.' };
+    }
+    const created = await apiFetch<{ id: string }>('/v1/cms/forms', {
+      method: 'POST',
+      body: definition,
+    });
+    revalidatePath('/forms');
+    return { ok: true, id: created.id, message: 'Form created.' };
   } catch (error) {
     return { ok: false, message: describe(error), ...fieldErrorsFrom(error) };
   }

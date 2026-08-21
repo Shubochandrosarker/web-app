@@ -78,9 +78,15 @@ export const messageStatus = pgEnum('message_status', [
   'queued',
   'sent',
   'delivered',
+  /** WhatsApp reports reads; email opens stay in message_events. */
+  'read',
   'bounced',
   'failed',
+  /** Inbound messages arrive received; they were never queued here. */
+  'received',
 ]);
+
+export const messageDirection = pgEnum('message_direction', ['outbound', 'inbound']);
 
 export const automationRunStatus = pgEnum('automation_run_status', [
   'running',
@@ -105,8 +111,13 @@ export const indexingProvider = pgEnum('indexing_provider', ['indexnow', 'google
 export const indexingStatus = pgEnum('indexing_status', ['submitted', 'rejected', 'error']);
 
 export const documentStatus = pgEnum('document_status', [
+  /** An upload URL was issued; no object confirmed yet. Short retention. */
+  'pending_upload',
+  /** The object arrived and awaits verification — legacy rows land here too. */
   'uploaded',
+  /** Verified (size, signature, checksum) but the malware scan is still owed. */
   'scanning',
+  /** Verified and scanned. The only status a download URL is minted for. */
   'clean',
   'rejected',
   'expired',

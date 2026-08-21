@@ -57,7 +57,18 @@ export const apiEnvSchema = z.object({
   AUTH_SESSION_SECRET: secret('AUTH_SESSION_SECRET'),
   AUTH_ACCESS_TOKEN_TTL: z.coerce.number().int().min(60).default(900),
   AUTH_REFRESH_TOKEN_TTL: z.coerce.number().int().min(3600).default(2_592_000),
-  /** Domain the session cookies are scoped to, e.g. `.nuesheba.com`. */
+  /**
+   * Domain the session cookies are scoped to, e.g. `.nuesheba.com`.
+   *
+   * Leave unset. Host-only cookies (the default) are the smaller grant: a
+   * cookie scoped to a parent domain is presented to every present and future
+   * subdomain — a compromised or merely sloppy `blog.` or `status.` host
+   * becomes a session-theft vector for the dashboard. The deployed topology
+   * (browser → dashboard origin only; the dashboard's server talks to the API)
+   * needs no shared cookie at all. Set this only if a future browser-direct
+   * API client on a sibling subdomain genuinely requires it, and write the
+   * threat model down when you do.
+   */
   AUTH_COOKIE_DOMAIN: z.string().optional(),
   /** Issuer shown in an authenticator app next to the TOTP code. */
   AUTH_MFA_ISSUER: z.string().min(1).default('Business OS'),
@@ -71,6 +82,38 @@ export const apiEnvSchema = z.object({
   ANALYTICS_HASH_SECRET: secret('ANALYTICS_HASH_SECRET'),
   /** Server-side Turnstile key. Absent disables the check — logged at boot. */
   TURNSTILE_SECRET_KEY: z.string().optional(),
+  /**
+   * The matching public site key, served to the site with the form definition
+   * so the widget the visitor sees and the verification the API performs are
+   * decided in one place and cannot drift apart.
+   */
+  TURNSTILE_SITE_KEY: z.string().optional(),
+  /**
+   * Where token verification posts to. Only ever overridden by tests, which
+   * point it at a local stub — production has no reason to change it.
+   */
+  TURNSTILE_VERIFY_URL: z
+    .url()
+    .default('https://challenges.cloudflare.com/turnstile/v0/siteverify'),
+  /**
+   * Which upstream hops to believe about the client address.
+   * `none` | `loopback` (default — a reverse proxy on this host) | `all` |
+   * a hop count | a comma-separated list of addresses/CIDRs.
+   *
+   * `all` is only safe when the origin is unreachable except through the
+   * proxy; anywhere it can be reached directly, a spoofed X-Forwarded-For
+   * re-keys the rate limits and falsifies audit addresses.
+   */
+  API_TRUST_PROXY: z.string().default('loopback'),
+  /**
+   * Malware scanning for private documents. `clamav` needs a reachable
+   * clamd; `stub` flags only the EICAR test string (tests and local dev);
+   * `none` verifies but does not scan, and says so on every document.
+   */
+  DOCUMENT_SCANNER: z.enum(['clamav', 'stub', 'none']).default('none'),
+  CLAMAV_HOST: z.string().default('127.0.0.1'),
+  CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
+  CLAMAV_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(30_000),
   DASHBOARD_URL: z.url().optional(),
   /**
    * The public site's origin.
@@ -156,6 +199,26 @@ export const whatsappEnvSchema = z
     WHATSAPP_PROVIDER: z.enum(['meta_cloud', 'log']).default('log'),
     WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
     WHATSAPP_ACCESS_TOKEN: z.string().optional(),
+    /**
+     * The value echoed back during Meta's webhook subscription handshake.
+     * Any random string; it authenticates the *subscription*, not messages.
+     */
+    WHATSAPP_VERIFY_TOKEN: z.string().optional(),
+    /**
+     * The Meta app secret, used to verify X-Hub-Signature-256 on every
+     * webhook delivery. Without it inbound webhooks are refused outright —
+     * an unverifiable webhook is an open write path into the CRM.
+     */
+    WHATSAPP_APP_SECRET: z.string().optional(),
+    /**
+     * Which workspace inbound WhatsApp messages belong to, by slug.
+     *
+     * Meta's payload identifies the phone number, not the tenant; a
+     * single-tenant deployment states the mapping here. Unset, inbound
+     * messages are acknowledged and dropped with a warning rather than
+     * guessed into somebody's CRM.
+     */
+    WHATSAPP_INBOUND_WORKSPACE: z.string().optional(),
   })
   .refine(
     (env) =>

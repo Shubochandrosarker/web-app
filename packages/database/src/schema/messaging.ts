@@ -12,7 +12,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 import { primaryKeyColumn, softDelete, timestamps } from './_shared.ts';
-import { messageChannel, messageStatus } from './enums.ts';
+import { messageChannel, messageDirection, messageStatus } from './enums.ts';
 import { workspaces } from './identity.ts';
 import { contacts, leads } from './crm.ts';
 
@@ -122,6 +122,7 @@ export const messages = pgTable(
      */
     leadId: uuid('lead_id').references(() => leads.id, { onDelete: 'set null' }),
     channel: messageChannel('channel').notNull(),
+    direction: messageDirection('direction').notNull().default('outbound'),
     status: messageStatus('status').notNull().default('queued'),
     templateId: uuid('template_id').references(() => messageTemplates.id, { onDelete: 'set null' }),
     campaignId: uuid('campaign_id').references(() => campaigns.id, { onDelete: 'set null' }),

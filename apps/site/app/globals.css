@@ -872,3 +872,54 @@ address {
     scroll-behavior: auto !important;
   }
 }
+
+/* -------------------------------------------------------- document upload */
+
+.field--file input[type='file'] {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0;
+  font-size: 0.95rem;
+}
+
+.uploaded-files {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.uploaded-files li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0.75rem;
+  margin-top: 0.35rem;
+  background: var(--color-surface-muted, #f3f4f6);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-primary, #1a56db);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+}
+
+.link-button:disabled {
+  color: var(--color-muted, #6b7280);
+  cursor: not-allowed;
+}
+
+.preview-banner {
+  background: #fef3c7;
+  border-bottom: 1px solid #f59e0b;
+  color: #78350f;
+  padding: 0.6rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+}

@@ -17,11 +17,21 @@ import { AuthService } from './auth/service.ts';
 import { registerAuthRoutes } from './auth/routes.ts';
 import { registerPublicContentRoutes } from './routes/content-public.ts';
 import { registerCmsRoutes } from './routes/cms.ts';
+import { registerCmsReferenceRoutes } from './routes/cms-references.ts';
 import { registerCrmRoutes } from './routes/crm.ts';
 import { registerPublicFormRoutes } from './routes/forms-public.ts';
+import { registerFormAdminRoutes } from './routes/forms-admin.ts';
+import { registerCommunicationRoutes } from './routes/communications.ts';
+import { registerWhatsappWebhookRoutes } from './routes/webhooks-whatsapp.ts';
+import { registerMediaRoutes } from './routes/media.ts';
 import { registerDocumentRoutes } from './routes/documents.ts';
 import { createOutboxHandler, registerInternalRoutes } from './routes/internal.ts';
-import { createEmailProvider, createWhatsappProvider } from './providers/notifications.ts';
+import {
+  createEmailProvider,
+  createWhatsappProvider,
+  type WhatsappProvider,
+} from './providers/notifications.ts';
+import { createScanner, type DocumentScanner } from './providers/scanner.ts';
 import { createStorage } from './providers/storage.ts';
 import { createDispatcher, type Dispatcher } from './services/dispatcher.ts';
 import { createLeadService } from './services/leads.ts';
@@ -48,6 +58,8 @@ export interface AppContext {
   readonly resolveWorkspaceId: (slug: string) => Promise<string>;
   readonly leads: ReturnType<typeof createLeadService>;
   readonly storage: ReturnType<typeof createStorage>;
+  readonly scanner: DocumentScanner;
+  readonly whatsapp: WhatsappProvider;
 }
 
 export interface BuildAppOptions {
@@ -59,6 +71,10 @@ export interface BuildAppOptions {
   readonly enabledModules?: readonly ModuleId[];
   readonly database?: Database;
   readonly redis?: RedisClient;
+  /** Test seam: an in-memory storage double for the document lifecycle. */
+  readonly storage?: ReturnType<typeof createStorage>;
+  /** Test seam: a deterministic scanner. */
+  readonly scanner?: DocumentScanner;
 }
 
 export interface BuiltApp {
@@ -74,6 +90,12 @@ export interface BuiltApp {
    * background loop racing its assertions — `server.ts` starts it.
    */
   readonly dispatcher: Dispatcher;
+  /**
+   * How many routes the classification guard collected. Exposed so a test can
+   * prove the guard is not vacuous — an empty collection passing the
+   * assertion is precisely the failure mode this build fixed.
+   */
+  readonly classifiedRoutes: () => number;
 }
 
 export function buildApp({
@@ -81,6 +103,8 @@ export function buildApp({
   enabledModules,
   database,
   redis: redisOverride,
+  storage: storageOverride,
+  scanner: scannerOverride,
 }: BuildAppOptions): BuiltApp {
   const warnings = assertProductionSafe(config);
 
@@ -119,8 +143,38 @@ export function buildApp({
       return typeof upstream === 'string' && upstream.length <= 200 ? upstream : randomUUID();
     },
     requestIdHeader: 'x-request-id',
-    trustProxy: true,
+    trustProxy: resolveTrustProxy(config.API_TRUST_PROXY),
     bodyLimit: 1_048_576,
+  });
+
+  /*
+   * The guard that makes "forgot to add auth" impossible.
+   *
+   * The collector MUST be installed before any route registers: Fastify's
+   * `onRoute` fires only for routes added after the hook exists, so a
+   * collector added at the end of this function would see none of the routes
+   * above it and the boot assertion would pass against an empty list — which
+   * is exactly what it did, silently, until a test registered an unclassified
+   * route and the boot succeeded. The runtime fail-closed check in
+   * `registerContext` was the only thing standing behind it.
+   *
+   * Asserted in `onReady`, which runs after every plugin has finished and
+   * before the server accepts a connection — so an unclassified route is a
+   * failed boot in CI, not a public endpoint in production.
+   */
+  const routes: RouteOptions[] = [];
+  app.addHook('onRoute', (route) => {
+    routes.push(route);
+  });
+  app.addHook('onReady', async () => {
+    assertEveryRouteIsClassified(routes);
+    if (routes.length === 0) {
+      // A guard that guards nothing is worse than no guard: it reads as
+      // assurance. Zero collected routes means the collector was installed
+      // too late or the hook API changed underneath it.
+      throw new Error('The route-classification guard collected zero routes. It is not wired.');
+    }
+    app.log.info({ routes: routes.length }, 'Every route declares how it is protected');
   });
 
   const db =
@@ -202,10 +256,21 @@ export function buildApp({
 
   const email = createEmailProvider(config, app.log);
   const whatsapp = createWhatsappProvider(config, app.log);
-  const storage = createStorage(config, app.log);
+  const storage = storageOverride ?? createStorage(config, app.log);
+  const scanner = scannerOverride ?? createScanner(config, app.log);
   const leads = createLeadService({ db, redis, config });
 
-  const context: AppContext = { config, db, redis, auth, resolveWorkspaceId, leads, storage };
+  const context: AppContext = {
+    config,
+    db,
+    redis,
+    auth,
+    resolveWorkspaceId,
+    leads,
+    storage,
+    scanner,
+    whatsapp,
+  };
 
   /* ------------------------------------------------------------- probes */
 
@@ -281,13 +346,24 @@ export function buildApp({
     'marketing.cms': (instance, ctx) => {
       registerPublicContentRoutes(instance, ctx.db, {
         publicMediaBaseUrl: ctx.config.storage?.R2_PUBLIC_BASE_URL,
-        turnstileSiteKey: undefined,
+        // The site key is public by design — it ships in the page — but it is
+        // the API's configuration that decides it, so the widget the site
+        // renders and the verification this API performs cannot drift apart.
+        turnstileSiteKey: ctx.config.TURNSTILE_SITE_KEY,
         resolveWorkspaceId: ctx.resolveWorkspaceId,
       });
       registerCmsRoutes(instance, ctx);
+      registerCmsReferenceRoutes(instance, ctx);
+      registerMediaRoutes(instance, ctx);
     },
-    'marketing.forms': (instance, ctx) => registerPublicFormRoutes(instance, ctx),
-    'crm.leads': (instance, ctx) => registerCrmRoutes(instance, ctx),
+    'marketing.forms': (instance, ctx) => {
+      registerPublicFormRoutes(instance, ctx);
+      registerFormAdminRoutes(instance, ctx);
+    },
+    'crm.leads': (instance, ctx) => {
+      registerCrmRoutes(instance, ctx);
+      registerCommunicationRoutes(instance, ctx);
+    },
     'ops.documents': (instance, ctx) => registerDocumentRoutes(instance, ctx),
   };
 
@@ -305,6 +381,10 @@ export function buildApp({
   const internalDependencies = { email, whatsapp };
   registerInternalRoutes(app, context, internalDependencies);
 
+  // The WhatsApp webhook is infrastructure, like the internal routes: Meta
+  // must be able to reach it whether or not any module is mounted.
+  registerWhatsappWebhookRoutes(app, context);
+
   /*
    * The in-process dispatcher shares one handler definition with the cron
    * endpoint, so a confirmation email behaves identically whether it was sent
@@ -317,24 +397,37 @@ export function buildApp({
     handler: createOutboxHandler(context, internalDependencies),
   });
 
-  /*
-   * The guard that makes "forgot to add auth" impossible.
-   *
-   * Collected as routes register and asserted in `onReady`, which runs after
-   * every plugin has finished and before the server accepts a connection — so
-   * an unclassified route is a failed boot in CI, not a public endpoint in
-   * production.
-   */
-  const routes: RouteOptions[] = [];
-  app.addHook('onRoute', (route) => {
-    routes.push(route);
-  });
-  app.addHook('onReady', async () => {
-    assertEveryRouteIsClassified(routes);
-    app.log.info({ routes: routes.length }, 'Every route declares how it is protected');
-  });
-
   for (const warning of warnings) app.log.warn({ warning }, 'Configuration warning');
 
-  return { app, db, redis, context, warnings, dispatcher };
+  return { app, db, redis, context, warnings, dispatcher, classifiedRoutes: () => routes.length };
+}
+
+/**
+ * Map the configured trust policy to Fastify's `trustProxy` value.
+ *
+ * `true` — trust any `X-Forwarded-For` — is only safe when the origin is
+ * unreachable except through the proxy, which is an infrastructure guarantee
+ * this process cannot verify. Anywhere the origin can be reached directly, a
+ * spoofed header re-keys the rate limits and falsifies the audit trail. So
+ * the trust is explicit:
+ *
+ *  - `none`      — trust nothing; `request.ip` is the socket peer.
+ *  - `loopback`  — trust a reverse proxy on this host (the documented
+ *                  Hostinger topology: nginx in front, API bound to
+ *                  localhost). The default.
+ *  - CSV of addresses/CIDRs — trust exactly those hops, e.g. a private LB.
+ *
+ * Hop counts are deliberately not supported: "trust N hops" trusts whatever
+ * happens to be N hops out, which is a topology assumption nobody re-checks
+ * when the topology changes. Name the proxies instead.
+ */
+export function resolveTrustProxy(setting: string | undefined): boolean | string[] {
+  const value = (setting ?? 'loopback').trim();
+  if (value === 'none' || value === 'false') return false;
+  if (value === 'loopback') return ['127.0.0.1', '::1'];
+  if (value === 'all' || value === 'true') return true;
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }

@@ -4,6 +4,8 @@ import { DashboardShell } from '@/components/shell';
 import { RelativeTime } from '@/components/relative-time';
 import { LeadControls } from '@/components/lead-controls';
 import { LeadNotes } from '@/components/lead-notes';
+import { DocumentList, type DocumentRow } from '@/components/document-list';
+import { LeadMessages, type MessageRow, type TemplateOption } from '@/components/lead-messages';
 import type { Pipeline } from '@/app/leads/page';
 
 export const dynamic = 'force-dynamic';
@@ -64,8 +66,10 @@ interface LeadDetail {
     readonly id: string;
     readonly kind: string;
     readonly originalFilename: string;
+    readonly mimeType: string;
     readonly sizeBytes: number;
     readonly status: string;
+    readonly createdAt: string;
   }[];
 }
 
@@ -96,12 +100,38 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     throw error;
   }
 
-  const [pipelines, assignees] = await Promise.all([
+  const [pipelines, assignees, messages, templates] = await Promise.all([
     apiFetch<{ pipelines: Pipeline[] }>('/v1/crm/pipelines'),
     can(session, 'leads.assign')
       ? apiFetch<{ assignees: Assignee[] }>('/v1/crm/assignees')
       : Promise.resolve({ assignees: [] as Assignee[] }),
+    apiFetch<{ items: MessageRow[] }>(`/v1/crm/leads/${id}/messages`).catch(() => ({
+      items: [] as MessageRow[],
+    })),
+    apiFetch<{
+      items: { slug: string; name: string; body: string; variables: string[] }[];
+    }>('/v1/crm/message-templates?channel=whatsapp').catch(() => ({ items: [] })),
   ]);
+
+  const whatsappTemplates: TemplateOption[] = templates.items.map((template) => ({
+    slug: template.slug,
+    name: template.name,
+    body: template.body,
+    variables: template.variables,
+  }));
+
+  const leadDocuments: DocumentRow[] = detail.documents.map((document) => ({
+    id: document.id,
+    kind: document.kind,
+    originalFilename: document.originalFilename,
+    mimeType: document.mimeType,
+    sizeBytes: document.sizeBytes,
+    status: document.status,
+    scanResult: null,
+    leadId: detail.lead.id,
+    contactId: null,
+    createdAt: document.createdAt,
+  }));
 
   const pipeline = pipelines.pipelines.find((entry) => entry.isDefault) ?? pipelines.pipelines[0];
   const { lead, contact } = detail;
@@ -185,33 +215,23 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
           {/* -------------------------------------------------------- documents */}
 
-          {detail.documents.length > 0 ? (
+          {leadDocuments.length > 0 ? (
             <section className="panel">
               <h2>Attached documents</h2>
-              <ul className="document-list">
-                {detail.documents.map((document) => (
-                  <li key={document.id}>
-                    <span>{document.originalFilename}</span>
-                    <span className="muted">
-                      {document.kind} · {Math.round(document.sizeBytes / 1024)} KB
-                    </span>
-                    {can(session, 'documents.download') ? (
-                      /*
-                       * A form, not a link: opening a document mints a
-                       * short-lived signed URL and writes an audit row, and
-                       * neither should happen because a page was prefetched.
-                       */
-                      <a className="button" href={`/documents/${document.id}`}>
-                        Open
-                      </a>
-                    ) : (
-                      <span className="badge badge--muted">Download not permitted</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <DocumentList
+                documents={leadDocuments}
+                canDownload={can(session, 'documents.download')}
+                canDelete={can(session, 'documents.delete')}
+              />
             </section>
           ) : null}
+
+          <LeadMessages
+            leadId={lead.id}
+            messages={messages.items}
+            templates={whatsappTemplates}
+            canSend={can(session, 'leads.write')}
+          />
 
           <LeadNotes
             leadId={lead.id}

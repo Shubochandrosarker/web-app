@@ -154,6 +154,12 @@ importers:
       '@bos/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@bos/sanitize':
+        specifier: workspace:*
+        version: link:../../packages/sanitize
+      '@bos/sections':
+        specifier: workspace:*
+        version: link:../../packages/sections
       '@bos/validation':
         specifier: workspace:*
         version: link:../../packages/validation

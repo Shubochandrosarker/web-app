@@ -5,7 +5,7 @@ import { schema, withWorkspace, withoutTenantScope } from '@bos/database';
 import { visitorPseudonym } from '../lib/crypto.ts';
 import { internalRoute } from '../lib/permissions.ts';
 import { dispatchOutbox, pruneOutbox, type OutboxHandler } from '../lib/outbox.ts';
-import { sweepExpiredDocuments } from './documents.ts';
+import { rescanPendingDocuments, sweepExpiredDocuments } from './documents.ts';
 import {
   createNotificationDispatcher,
   type LeadCreatedPayload,
@@ -392,8 +392,11 @@ export function registerInternalRoutes(
     { config: { bosAccess: internalRoute() } },
     async () => {
       const swept = await sweepExpiredDocuments(context);
+      // Documents whose scan errored are owed a verdict; the sweep is where
+      // that debt is paid off, before anything expires around them.
+      const rescan = await rescanPendingDocuments(context);
       const pruned = await pruneOutbox(db);
-      return { ...swept, outboxRowsPruned: pruned };
+      return { ...swept, rescan, outboxRowsPruned: pruned };
     },
   );
 
