@@ -1,39 +1,21 @@
-import { BUSINESS_TYPE_PRESETS, resolveEnabledModules } from '@bos/business-types';
-import { buildNavigation } from '@/lib/navigation';
+import { redirect } from 'next/navigation';
+import { getSession, can } from '@/lib/api';
+
+export const dynamic = 'force-dynamic';
 
 /**
- * Phase 1 placeholder.
+ * The dashboard's front door.
  *
- * It renders the navigation the current business type would produce, which is
- * worth having now: it makes the module system visible and verifiable before
- * any screen behind those links exists. TASK-107 replaces this with the real
- * authenticated shell reading the workspace from the API.
+ * It has no content of its own: it sends the signed-in person to the screen
+ * they actually work from. For NuESheba staff that is the lead board; for
+ * somebody who can only edit content it is the content list. A landing page
+ * of tiles nobody reads is a click between them and their job.
  */
-export default function DashboardHome() {
-  const businessType = 'education_service' as const;
-  const enabled = resolveEnabledModules(BUSINESS_TYPE_PRESETS[businessType].defaultModules);
-  const navigation = buildNavigation(enabled, businessType);
+export default async function IndexPage() {
+  const session = await getSession();
+  if (!session) redirect('/sign-in');
 
-  return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem', maxWidth: '60ch' }}>
-      <h1>Business OS dashboard</h1>
-      <p>
-        Navigation below is generated from the <code>{businessType}</code> preset — {enabled.length}{' '}
-        modules enabled. Change the business type and the sidebar changes with it; nothing here is
-        written per client.
-      </p>
-      {navigation.map((group) => (
-        <section key={group.title}>
-          <h2>{group.title}</h2>
-          <ul>
-            {group.items.map((item) => (
-              <li key={item.href}>
-                {item.label} <code>{item.href}</code>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-    </main>
-  );
+  if (can(session, 'leads.read')) redirect('/leads');
+  if (can(session, 'content.read')) redirect('/content');
+  redirect('/settings');
 }

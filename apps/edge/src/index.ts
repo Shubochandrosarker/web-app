@@ -1,8 +1,8 @@
-import { collectHandler } from './collect.ts';
+import { collectHandler, collectPreflight } from './collect.ts';
 import { webhookHandler } from './webhooks.ts';
 import { handleEventBatch } from './consumer.ts';
 import { runScheduled } from './scheduled.ts';
-import type { Env } from './env.ts';
+import { consumersEnabled, type Env } from './env.ts';
 
 /**
  * The edge Worker.
@@ -15,7 +15,8 @@ import type { Env } from './env.ts';
  *  - `queue`     asynchronous work moved off the request path — outbound
  *                messages, indexing submissions, cache purges. Batched, with
  *                retries and a dead-letter queue.
- *  - `scheduled` nightly maintenance: analytics rollups, document retention.
+ *  - `scheduled` nightly maintenance: outbox drain, analytics rollups,
+ *                document retention, scheduled publishing.
  */
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -23,11 +24,26 @@ export default {
 
     switch (url.pathname) {
       case '/collect':
-        return collectHandler(request, env, ctx);
+        return request.method === 'OPTIONS'
+          ? collectPreflight(request, env)
+          : collectHandler(request, env, ctx);
+
       case '/webhooks':
         return webhookHandler(request, env, ctx);
+
       case '/health':
-        return Response.json({ status: 'ok' });
+        /*
+         * Reports whether the consumers are wired up, not just that the Worker
+         * is running. "Deployed but not consuming" is the state this Worker
+         * spent its first release in, and a health check that answers `ok`
+         * either way is a health check that hid it.
+         */
+        return Response.json({
+          status: 'ok',
+          environment: env.ENVIRONMENT,
+          consumers: consumersEnabled(env) ? 'enabled' : 'disabled',
+        });
+
       default:
         return new Response('Not found', { status: 404 });
     }

@@ -77,15 +77,32 @@ export async function resolveSectionReferences(
 
   if (!needsAnything) return EMPTY_REFERENCES;
 
-  const [services, people, locations, reviews, related, media, forms] = await Promise.all([
+  const [services, people, locations, reviews, related, media] = await Promise.all([
     resolveServices(tx, workspaceId, request, options),
     resolvePeople(tx, workspaceId, request, options),
     resolveLocations(tx, workspaceId, request),
     request.wantsReviews ? resolveReviews(tx, workspaceId) : Promise.resolve([]),
     resolveRelated(tx, request, options),
     resolveMedia(tx, request, options),
-    resolveForms(tx, request, options),
   ]);
+
+  /*
+   * Forms resolve last, because a select can draw its options from the service
+   * catalogue. A page that shows a form but no service grid still needs the
+   * catalogue, so it is loaded here when the pass above did not already have a
+   * reason to.
+   */
+  const catalogue =
+    request.formIds.length > 0 && services.length === 0
+      ? await resolveServices(
+          tx,
+          workspaceId,
+          { ...request, wantsAllServices: true, serviceIds: [] },
+          options,
+        )
+      : services;
+
+  const forms = await resolveForms(tx, request, options, catalogue);
 
   // People and related entries carry their own media, which may not be in the
   // section props. Fold it in so a renderer has one place to look.
@@ -369,6 +386,7 @@ async function resolveForms(
   tx: Database,
   request: ReturnType<typeof collectSectionReferences>,
   options: ResolveOptions,
+  services: readonly ResolvedService[],
 ): Promise<ResolvedForm[]> {
   if (request.formIds.length === 0) return [];
 
@@ -386,11 +404,20 @@ async function resolveForms(
 
   return rows.map((row) => {
     const spam = (row.spamConfig as { honeypotField?: string } | null) ?? {};
+    const fields = ((row.fields as ResolvedForm['fields'] | null) ?? []).map((field) =>
+      field.optionsSource === 'services'
+        ? {
+            ...field,
+            options: services.map((service) => ({ value: service.slug, label: service.name })),
+          }
+        : field,
+    );
+
     return {
       id: row.id,
       slug: row.slug,
       name: row.name,
-      fields: (row.fields as ResolvedForm['fields'] | null) ?? [],
+      fields,
       submitLabel: row.submitLabel,
       requiresConsent: row.requiresConsent,
       honeypotField: spam.honeypotField ?? 'company_website',

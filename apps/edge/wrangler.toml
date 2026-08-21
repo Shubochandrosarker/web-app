@@ -37,12 +37,80 @@ dead_letter_queue = "bos-events-dlq"
 binding = "PUBLIC_ASSETS"
 bucket_name = "bos-assets"
 
-# Nightly: refresh analytics rollups and sweep documents past their retention.
+# Nightly: drain the outbox, refresh rollups, sweep expired documents and
+# publish anything whose scheduled time has passed.
 [triggers]
 crons = ["17 2 * * *"]
 
 [vars]
 ENVIRONMENT = "development"
+# Off until /v1/internal/* is deployed and reachable.
+#
+# A consumer that forwards to a route which does not exist retries every
+# message five times and fills the dead-letter queue. Holding the messages
+# instead means they drain when the API arrives, rather than needing to be
+# recovered from the DLQ by hand. Turn this on as the *last* step of the first
+# production deploy, not the first.
+CONSUMERS_ENABLED = "false"
+# Which origins may post analytics, and the workspace each maps to. Replaces
+# the client-supplied slug the collector used to trust.
+ANALYTICS_ORIGINS = '{"http://localhost:3000":"nuesheba"}'
 
-# Secrets — set with `wrangler secret put`, never in this file:
+# ---------------------------------------------------------------------------
+# Staging
+# ---------------------------------------------------------------------------
+[env.staging]
+name = "bos-edge-staging"
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+CONSUMERS_ENABLED = "false"
+ANALYTICS_ORIGINS = '{"https://staging.nuesheba.com":"nuesheba"}'
+
+[[env.staging.queues.producers]]
+queue = "bos-events-staging"
+binding = "EVENT_QUEUE"
+
+[[env.staging.queues.consumers]]
+queue = "bos-events-staging"
+max_batch_size = 25
+max_batch_timeout = 10
+max_retries = 5
+dead_letter_queue = "bos-events-staging-dlq"
+
+[[env.staging.r2_buckets]]
+binding = "PUBLIC_ASSETS"
+bucket_name = "bos-assets-staging"
+
+# ---------------------------------------------------------------------------
+# Production
+# ---------------------------------------------------------------------------
+[env.production]
+name = "bos-edge-production"
+
+[env.production.vars]
+ENVIRONMENT = "production"
+CONSUMERS_ENABLED = "true"
+ANALYTICS_ORIGINS = '{"https://nuesheba.com":"nuesheba","https://www.nuesheba.com":"nuesheba"}'
+
+[[env.production.queues.producers]]
+queue = "bos-events"
+binding = "EVENT_QUEUE"
+
+[[env.production.queues.consumers]]
+queue = "bos-events"
+max_batch_size = 25
+max_batch_timeout = 10
+max_retries = 5
+dead_letter_queue = "bos-events-dlq"
+
+[[env.production.r2_buckets]]
+binding = "PUBLIC_ASSETS"
+bucket_name = "bos-assets"
+
+[env.production.triggers]
+crons = ["17 2 * * *"]
+
+# Secrets — set with `wrangler secret put --env <environment>`, never in this
+# file:
 #   API_BASE_URL, EDGE_SHARED_SECRET, INDEXNOW_KEY

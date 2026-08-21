@@ -20,9 +20,10 @@ import { registerCmsRoutes } from './routes/cms.ts';
 import { registerCrmRoutes } from './routes/crm.ts';
 import { registerPublicFormRoutes } from './routes/forms-public.ts';
 import { registerDocumentRoutes } from './routes/documents.ts';
-import { registerInternalRoutes } from './routes/internal.ts';
+import { createOutboxHandler, registerInternalRoutes } from './routes/internal.ts';
 import { createEmailProvider, createWhatsappProvider } from './providers/notifications.ts';
 import { createStorage } from './providers/storage.ts';
+import { createDispatcher, type Dispatcher } from './services/dispatcher.ts';
 import { createLeadService } from './services/leads.ts';
 import { createNotificationDispatcher } from './services/notifications.ts';
 
@@ -66,6 +67,13 @@ export interface BuiltApp {
   readonly redis: RedisClient;
   readonly context: AppContext;
   readonly warnings: readonly string[];
+  /**
+   * Drains the outbox every few seconds.
+   *
+   * Returned rather than started here so a test can build the app without a
+   * background loop racing its assertions — `server.ts` starts it.
+   */
+  readonly dispatcher: Dispatcher;
 }
 
 export function buildApp({
@@ -286,9 +294,19 @@ export function buildApp({
   // Always mounted: the edge Worker's callbacks are infrastructure, not a
   // tenant capability, and a Worker whose ingest endpoint is missing retries
   // until its messages reach the dead-letter queue.
-  registerInternalRoutes(app, context, {
-    email,
-    whatsapp,
+  const internalDependencies = { email, whatsapp };
+  registerInternalRoutes(app, context, internalDependencies);
+
+  /*
+   * The in-process dispatcher shares one handler definition with the cron
+   * endpoint, so a confirmation email behaves identically whether it was sent
+   * five seconds after the form was submitted or by the nightly sweep.
+   */
+  const dispatcher = createDispatcher({
+    db,
+    redis,
+    logger: app.log,
+    handler: createOutboxHandler(context, internalDependencies),
   });
 
   /*
@@ -310,5 +328,5 @@ export function buildApp({
 
   for (const warning of warnings) app.log.warn({ warning }, 'Configuration warning');
 
-  return { app, db, redis, context, warnings };
+  return { app, db, redis, context, warnings, dispatcher };
 }

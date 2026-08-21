@@ -4,12 +4,13 @@ import { z } from 'zod';
 import { schema, withWorkspace, withoutTenantScope } from '@bos/database';
 import { visitorPseudonym } from '../lib/crypto.ts';
 import { internalRoute } from '../lib/permissions.ts';
-import { dispatchOutbox, pruneOutbox } from '../lib/outbox.ts';
+import { dispatchOutbox, pruneOutbox, type OutboxHandler } from '../lib/outbox.ts';
 import { sweepExpiredDocuments } from './documents.ts';
 import {
   createNotificationDispatcher,
   type LeadCreatedPayload,
 } from '../services/notifications.ts';
+import { createRevalidator } from '../services/revalidation.ts';
 import type { EmailProvider, WhatsappProvider } from '../providers/notifications.ts';
 import type { AppContext } from '../app.ts';
 import { ApiError } from '../lib/errors.ts';
@@ -132,18 +133,74 @@ export interface InternalRouteDependencies {
   readonly whatsapp: WhatsappProvider;
 }
 
+/**
+ * The one outbox handler.
+ *
+ * Shared by the cron endpoint and the in-process dispatcher, so there is
+ * exactly one definition of what each event does. Two copies would drift, and
+ * the copy that drifted would be the one that runs at 2am.
+ */
+export function createOutboxHandler(
+  context: AppContext,
+  deps: InternalRouteDependencies,
+): OutboxHandler {
+  const notifications = createNotificationDispatcher({
+    config: context.config,
+    email: deps.email,
+    whatsapp: deps.whatsapp,
+    db: context.db,
+  });
+  const revalidate = createRevalidator(context.config);
+
+  return async (event) => {
+    switch (event.name) {
+      case 'lead.created':
+        await notifications.handleLeadCreated(
+          event.workspaceId,
+          event.payload as unknown as LeadCreatedPayload,
+        );
+        return;
+
+      case 'content.published': {
+        /*
+         * Expire the page's cache tag on the site, and submit the URL for
+         * indexing if the deployment is indexable.
+         *
+         * Done through the outbox rather than inline in the publish handler so
+         * it inherits the retry: a site that is redeploying when somebody
+         * publishes does not end up serving the previous version until the
+         * cache window closes.
+         */
+        const payload = event.payload as {
+          path?: string;
+          paths?: string[];
+          locale?: string;
+        };
+        const paths = payload.paths ?? (payload.path ? [payload.path] : []);
+        if (paths.length > 0) {
+          await revalidate({ paths, locale: payload.locale ?? 'en' });
+        }
+        return;
+      }
+
+      default:
+        /*
+         * Acknowledged rather than retried. An event nobody handles is a gap
+         * in the code, not a transient failure, and retrying it eight times
+         * helps nobody — it just delays the events behind it.
+         */
+        return;
+    }
+  };
+}
+
 export function registerInternalRoutes(
   app: FastifyInstance,
   context: AppContext,
   deps: InternalRouteDependencies,
 ): void {
   const { db, config, resolveWorkspaceId } = context;
-  const notifications = createNotificationDispatcher({
-    config,
-    email: deps.email,
-    whatsapp: deps.whatsapp,
-    db,
-  });
+  const outboxHandler = createOutboxHandler(context, deps);
 
   /* --------------------------------------------------------------- ingest */
 
@@ -249,30 +306,7 @@ export function registerInternalRoutes(
   app.post(
     '/v1/internal/jobs/outbox.dispatch',
     { config: { bosAccess: internalRoute() } },
-    async () => {
-      const result = await dispatchOutbox(db, async (event) => {
-        switch (event.name) {
-          case 'lead.created':
-            await notifications.handleLeadCreated(
-              event.workspaceId,
-              event.payload as unknown as LeadCreatedPayload,
-            );
-            return;
-          case 'content.published':
-            // Revalidation and IndexNow are handled by the site's own
-            // revalidate endpoint, which the publish flow calls directly. The
-            // event is recorded here so the timeline is complete.
-            return;
-          default:
-            // Unknown events are acknowledged rather than retried forever: an
-            // event nobody handles is a gap in the code, not a transient
-            // failure, and retrying it eight times helps nobody.
-            return;
-        }
-      });
-
-      return result;
-    },
+    async () => dispatchOutbox(db, outboxHandler),
   );
 
   app.post(

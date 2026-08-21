@@ -423,7 +423,13 @@ const SERVICE_REQUEST_FIELDS = [
     label: 'What do you need?',
     type: 'select',
     required: true,
-    // Populated from the published service catalogue when the form renders.
+    /*
+     * Filled from the workspace's published service catalogue when the form is
+     * resolved — see `optionsSource` in @bos/content. Writing the options out
+     * here would mean a list that has to be kept in step with the catalogue by
+     * hand, and an empty one makes a required field unanswerable.
+     */
+    optionsSource: 'services',
     options: [],
   },
   { name: 'degree', label: 'Degree or programme', type: 'text', required: false, options: [] },

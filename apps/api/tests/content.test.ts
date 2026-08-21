@@ -386,6 +386,65 @@ describe('CMS write path', () => {
     );
   });
 
+  /**
+   * The regression this exists for: `entryInput.partial()` left `document`'s
+   * `.default({ sections: [] })` in place, so a PATCH that renamed a page
+   * replaced its entire content with nothing. A customer's page emptied by a
+   * slug change is about as bad as a CMS bug gets, and nothing else in the
+   * suite would have noticed.
+   */
+  it('leaves the document alone when a patch does not include one', async () => {
+    const create = await harness.app.inject({
+      method: 'POST',
+      url: '/v1/cms/content',
+      headers: authHeaders(harness, ownerToken),
+      payload: {
+        type: 'page',
+        slug: 'keeps-content',
+        path: '/keeps-content',
+        locale: 'en',
+        title: 'Keeps content',
+        fields: { serviceId: 'abc' },
+        document: {
+          sections: [
+            {
+              id: randomUUID(),
+              type: 'content',
+              hidden: false,
+              props: { html: '<p>Please do not delete me.</p>', layout: 'prose' },
+            },
+          ],
+        },
+      },
+    });
+    const { id } = create.json() as { id: string };
+
+    // A rename, and nothing else.
+    const renamed = await harness.app.inject({
+      method: 'PATCH',
+      url: `/v1/cms/content/${id}`,
+      headers: authHeaders(harness, ownerToken),
+      payload: { slug: 'renamed', path: '/renamed' },
+    });
+    assert.equal(renamed.statusCode, 200);
+
+    const read = await harness.app.inject({
+      method: 'GET',
+      url: `/v1/cms/content/${id}`,
+      headers: authHeaders(harness, ownerToken),
+    });
+
+    const entry = read.json() as {
+      document: { sections: unknown[] };
+      fields: Record<string, unknown>;
+      path: string;
+    };
+
+    assert.equal(entry.path, '/renamed');
+    assert.equal(entry.document.sections.length, 1, 'the rename emptied the document');
+    assert.deepEqual(entry.fields, { serviceId: 'abc' }, 'the rename emptied the fields');
+  });
+
   it('rejects a duplicate path with a message an editor can act on', async () => {
     const payload = {
       type: 'page' as const,

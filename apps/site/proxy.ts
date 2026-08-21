@@ -154,6 +154,25 @@ export default async function proxy(request: NextRequest): Promise<NextResponse>
         : undefined);
 
     if (candidate) {
+      /*
+       * 410 Gone, for a page that genuinely has no equivalent.
+       *
+       * Handled before the redirect branch, and separately, because a 410 row
+       * stores its own path as the destination — treating it as a redirect
+       * would send the visitor in a loop back to the URL they asked for.
+       *
+       * A 410 is the right answer far less often than people reach for it, but
+       * where it is right it is much better than a 301 to something
+       * unrelated: it tells a crawler to drop the URL rather than to treat the
+       * destination as a soft 404.
+       */
+      if (candidate.statusCode === 410) {
+        return new NextResponse('Gone', {
+          status: 410,
+          headers: { 'content-type': 'text/plain; charset=utf-8' },
+        });
+      }
+
       const destination = new URL(candidate.toPath, request.url);
       // The query string survives the redirect: dropping it loses the campaign
       // parameters on exactly the links most likely to carry them.

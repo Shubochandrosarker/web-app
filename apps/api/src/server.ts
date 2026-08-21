@@ -4,7 +4,7 @@ import { loadApiConfig } from './lib/env.ts';
 import { closeRedis } from './lib/redis.ts';
 
 const config = loadApiConfig();
-const { app } = buildApp({ config });
+const { app, dispatcher } = buildApp({ config });
 
 /**
  * Graceful shutdown.
@@ -23,6 +23,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     shuttingDown = true;
 
     app.log.info({ signal }, 'Shutting down');
+    dispatcher.stop();
     void app
       .close()
       .then(() => Promise.allSettled([closeDatabase(), closeRedis()]))
@@ -54,6 +55,14 @@ try {
    * `resolvePort`.
    */
   await app.listen({ port: config.port, host: '0.0.0.0' });
+
+  /*
+   * Started after `listen` succeeds. Draining the outbox from a process that
+   * then fails to bind its port would mean sending confirmations from an
+   * instance nobody can reach — and, worse, doing it twice if a supervisor
+   * restarts it.
+   */
+  dispatcher.start();
 } catch (error) {
   app.log.error({ err: error }, 'Failed to start');
   process.exit(1);

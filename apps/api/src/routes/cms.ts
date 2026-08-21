@@ -71,6 +71,36 @@ const entryInput = z.object({
   seo: seoInput.default({ noindex: false, nofollow: false }),
 });
 
+/**
+ * The update schema, written out rather than derived with `.partial()`.
+ *
+ * `.partial()` makes a field optional but does **not** remove its `.default()`,
+ * so `entryInput.partial().parse({ path: '/new' })` returns
+ * `{ path: '/new', document: { sections: [] }, fields: {} }` — and a PATCH that
+ * only renamed a page silently replaced its entire content with nothing.
+ *
+ * Every field here is optional with no default, so an absent key is absent.
+ * The distinction between "not sent" and "sent as empty" is the whole contract
+ * of a PATCH, and it has to be visible in the schema rather than reconstructed
+ * by the handler.
+ */
+const entryUpdateInput = z.object({
+  type: z.enum(schema.contentType.enumValues).optional(),
+  slug: z
+    .string()
+    .min(1)
+    .max(140)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'must be lowercase words separated by single hyphens')
+    .optional(),
+  path: pathParam.optional(),
+  locale: localeParam.optional(),
+  title: z.string().min(1).max(300).optional(),
+  excerpt: z.string().max(600).optional(),
+  document: pageDocumentSchema.optional(),
+  fields: z.record(z.string(), z.unknown()).optional(),
+  seo: seoInput.optional(),
+});
+
 const statusInput = z.object({
   status: z.enum(['draft', 'scheduled', 'published', 'archived']),
   /** Required when status is `scheduled`; ignored otherwise. */
@@ -319,7 +349,7 @@ export function registerCmsRoutes(app: FastifyInstance, context: AppContext): vo
     async (request) => {
       const workspace = requireWorkspace(request);
       const { id } = z.object({ id: z.uuid() }).parse(request.params);
-      const input = entryInput.partial().parse(request.body);
+      const input = entryUpdateInput.parse(request.body);
       const userId = requireUserId(request);
 
       const sanitised = input.document
@@ -391,6 +421,33 @@ export function registerCmsRoutes(app: FastifyInstance, context: AppContext): vo
           .where(eq(schema.contentEntries.id, id));
 
         if (input.seo) await upsertSeo(tx, workspace.workspaceId, id, input.seo);
+
+        /*
+         * An edit to a page that is already live has to reach the public site,
+         * and publishing is not the only moment that happens — a typo fixed on
+         * a published page is the common case. The event carries both paths so
+         * a rename expires the old cache entry as well as filling the new one.
+         */
+        if (existing.status === 'published') {
+          const paths = [input.path ?? existing.path];
+          if (input.path && input.path !== existing.path) paths.push(existing.path);
+
+          await appendOutboxEvent(tx, workspace.workspaceId, {
+            name: 'content.published',
+            correlationId: randomUUID(),
+            // Keyed on the revision, so each save produces exactly one
+            // revalidation and a retried save produces none.
+            idempotencyKey: `content.revalidate:${id}:${(latest?.revision ?? 0) + 1}`,
+            actorUserId: userId,
+            payload: {
+              contentEntryId: id,
+              path: paths[0],
+              paths,
+              locale: input.locale ?? existing.locale,
+              type: existing.type,
+            },
+          });
+        }
 
         return { id, previousPath: existing.path };
       }).catch(rethrowUniqueViolation);

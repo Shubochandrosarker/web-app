@@ -72,6 +72,15 @@ export const apiEnvSchema = z.object({
   /** Server-side Turnstile key. Absent disables the check — logged at boot. */
   TURNSTILE_SECRET_KEY: z.string().optional(),
   DASHBOARD_URL: z.url().optional(),
+  /**
+   * The public site's origin.
+   *
+   * Publishing a page posts to `<SITE_URL>/api/revalidate` so the change is
+   * visible immediately rather than at the end of the cache window. Optional
+   * because an API serving a site that is not deployed yet is a real state.
+   */
+  SITE_URL: z.url().optional(),
+  INDEXNOW_KEY: z.string().optional(),
 });
 
 export const siteEnvSchema = z.object({

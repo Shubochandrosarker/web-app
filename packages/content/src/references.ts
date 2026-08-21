@@ -125,6 +125,16 @@ export const resolvedFormFieldSchema = z.object({
   options: z
     .array(z.object({ value: z.string().max(140), label: z.string().max(200) }))
     .default([]),
+  /**
+   * Where a select's options come from, when they are not written out.
+   *
+   * `services` fills them from the workspace's published service catalogue at
+   * resolve time. Without this, a "what do you need?" field either has to be
+   * kept in step with the catalogue by hand — which it will not be — or ships
+   * empty, which makes a required field unanswerable and the whole form
+   * impossible to submit.
+   */
+  optionsSource: z.enum(['services']).optional(),
   maxLength: z.number().int().positive().optional(),
   /** Accepted MIME types for a `file` field. */
   accept: z.array(z.string().max(140)).default([]),

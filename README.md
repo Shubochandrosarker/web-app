@@ -47,48 +47,88 @@ docs/
 ```bash
 pnpm install
 
-# Postgres 16+, as an owner/admin role
+# Postgres 16+ and Redis. Migrate as an owner/admin role.
 export DATABASE_URL=postgresql://bos@localhost:5432/bos_dev
 pnpm db:migrate          # migrations → RLS policies → bos_app role
 
-cp .env.example .env     # then fill it in
+# The application connects as bos_app, which db:migrate creates with NOLOGIN
+# and no password — a committed password is not a password. Give it one:
+psql -c "ALTER ROLE bos_app WITH LOGIN PASSWORD 'local-dev-password';"
 
+cp .env.example .env     # then fill it in, pointing DATABASE_URL at bos_app
+
+pnpm workspace:provision nuesheba --owner-email you@example.com
 pnpm dev                 # site :3000 · dashboard :3001 · api :4000
 ```
 
-The application must connect as `bos_app`, **not** as the migration role — see
-[the database README](docs/database/README.md) for why that is load-bearing
-rather than a nicety.
+The application must connect as `bos_app`, **not** as the migration role. This
+is not a nicety: row-level security does not apply to a superuser, to a role
+with `BYPASSRLS`, or — without `FORCE` — to the table owner. Policies can be
+perfect and every tenant boundary still open, purely because the connection
+string points at the wrong role, and nothing in the application would look
+wrong. The test harness refuses to run against such a role for the same reason.
+See [the database README](docs/database/README.md).
 
 ## Commands
 
-|                    |                                               |
-| ------------------ | --------------------------------------------- |
-| `pnpm dev`         | All apps in watch mode                        |
-| `pnpm build`       | Build everything (needs `BOS_WORKSPACE_SLUG`) |
-| `pnpm typecheck`   | Typecheck every package and app               |
-| `pnpm test`        | Run all tests                                 |
-| `pnpm db:generate` | Generate a migration after a schema change    |
-| `pnpm db:migrate`  | Apply migrations, RLS and grants              |
-| `pnpm format`      | Prettier                                      |
+|                            |                                                        |
+| -------------------------- | ------------------------------------------------------ |
+| `pnpm dev`                 | All apps in watch mode                                 |
+| `pnpm build`               | Build everything (needs `BOS_WORKSPACE_SLUG`)          |
+| `pnpm lint`                | ESLint over every app and package                      |
+| `pnpm typecheck`           | Typecheck every package and app                        |
+| `pnpm test`                | Every suite, against a real Postgres and Redis         |
+| `pnpm format`              | Prettier                                               |
+| `pnpm db:generate`         | Generate a migration after a schema change             |
+| `pnpm db:migrate`          | Apply migrations, RLS and grants                       |
+| `pnpm workspace:provision` | Create or refresh a tenant from `configs/<slug>/`      |
+| `pnpm check:readiness`     | Fail if a tenant config still carries placeholder data |
+| `pnpm smoke`               | Smoke-test a deployment. Non-zero means do not ship    |
+| `pnpm redirects:import`    | Import a URL migration map                             |
+| `pnpm redirects:verify`    | Check the deployed site honours it, in one hop         |
 
 ## What is built
 
-Phase 1 is complete and **verified end to end** — Postgres with row-level
-security → Fastify API → content provider → a Next.js page carrying a connected
-JSON-LD graph, split sitemaps and generated robots.
+**The production vertical slice works end to end**, verified by an automated
+smoke test rather than by assertion:
 
-|                  |                                                                        |
-| ---------------- | ---------------------------------------------------------------------- |
-| Schema           | 58 tables, 19 enums, generated migration, RLS on 56 of 58              |
-| Tenant isolation | Verified against a real database, including the superuser failure mode |
-| Contracts        | 9 packages: modules, sections, events, content, SEO, automation        |
-| Apps             | 4 scaffolded; the content read path is implemented and working         |
-| Docs             | 10 architecture documents, 13 ADRs, 30 scheduled tasks                 |
+```
+visitor → service page → service request → lead → CRM → confirmation
+```
 
-Everything beyond Phase 1 is specified in
-[`docs/architecture/`](docs/architecture/00-overview.md) and scheduled in
-[`docs/tasks/`](docs/tasks/README.md).
+and, for staff:
+
+```
+sign in → dashboard → lead → move it along the pipeline → note, task, follow-up
+```
+
+|                  |                                                                             |
+| ---------------- | --------------------------------------------------------------------------- |
+| Schema           | 58 tables, 19 enums, RLS on every tenant-scoped table, `FORCE`d             |
+| Tenant isolation | Verified against a real database, as the least-privilege application role   |
+| Authentication   | Argon2id, opaque tokens, refresh rotation with reuse detection, TOTP MFA    |
+| Authorisation    | Every route declares a permission; the boot fails if one does not           |
+| Content          | Authoring API, sanitisation boundary, all 17 section renderers, tag caching |
+| CRM              | Public form → contact, lead, activity and event in one transaction          |
+| Tests            | 79 automated, against a real Postgres and Redis                             |
+| Docs             | 10 architecture documents, 17 ADRs, deployment and go-live runbooks         |
+
+What is deliberately **not** built for this milestone — the automation builder,
+the analytics dashboard, the remaining CRM screens — is listed in
+[`docs/tasks/README.md`](docs/tasks/README.md) and in
+[the go-live checklist](docs/deployment/go-live.md), so nobody discovers it as
+a surprise.
+
+## Deploying
+
+|                                                             |                                                                                   |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [Hostinger](docs/deployment/hostinger.md)                   | Three Node apps from one repository, and the three settings that catch people out |
+| [Cloudflare](docs/deployment/cloudflare.md)                 | DNS, WAF, R2, Queues, and why the Worker ships with its consumers off             |
+| [Environments](docs/deployment/environments.md)             | What differs between development, staging and production                          |
+| [URL migration](docs/deployment/url-migration.md)           | Mandatory before replacing a site that ranks                                      |
+| [Backup and restore](docs/deployment/backup-and-restore.md) | Including the drill, which is the part that makes the rest true                   |
+| [Go-live](docs/deployment/go-live.md)                       | The cutover, in order, with a rollback                                            |
 
 ## Design in one paragraph
 
