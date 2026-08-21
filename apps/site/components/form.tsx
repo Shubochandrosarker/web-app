@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import type { ResolvedForm, ResolvedFormField } from '@bos/content';
 import { readAttribution } from '@/lib/attribution';
+import { Turnstile } from '@/components/turnstile';
 
 /**
  * The service request form.
@@ -31,7 +32,13 @@ type Status =
 
 export function ServiceRequestForm({ form, workspaceSlug, locale }: ServiceRequestFormProps) {
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
+  // Incremented on every rejected submission: the server consumed the
+  // Turnstile token, so the widget must mint a fresh one before a retry.
+  const [turnstileReset, setTurnstileReset] = useState(0);
   const formId = useId();
+
+  const turnstileSiteKey =
+    form.turnstileSiteKey ?? process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? undefined;
 
   /*
    * When the form became visible to a person.
@@ -116,6 +123,7 @@ export function ServiceRequestForm({ form, workspaceSlug, locale }: ServiceReque
         fieldErrors[detail.path] = detail.message;
       }
 
+      setTurnstileReset((count) => count + 1);
       setStatus({
         kind: 'error',
         message:
@@ -216,10 +224,8 @@ export function ServiceRequestForm({ form, workspaceSlug, locale }: ServiceReque
         </div>
       ) : null}
 
-      {form.turnstileSiteKey ? (
-        // Rendered by Cloudflare's script when it is present. Absent, the
-        // server simply has one fewer signal — it never blocks the form.
-        <div className="cf-turnstile" data-sitekey={form.turnstileSiteKey} data-theme="light" />
+      {turnstileSiteKey ? (
+        <Turnstile siteKey={turnstileSiteKey} resetSignal={turnstileReset} />
       ) : null}
 
       <button type="submit" className="button button--primary" disabled={submitting}>

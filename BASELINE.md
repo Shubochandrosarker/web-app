@@ -4,32 +4,32 @@ Recorded before any change on `claude/business-os-production-els802`.
 Every result below was **run, not assumed**, on a fresh clone with a clean
 Postgres 16 and Redis 7.
 
-| Field      | Value                                      |
-| ---------- | ------------------------------------------ |
-| Commit     | `8388cc809fe5913a76865f721f536d84601accb8` |
-| Branch     | `main` (= `claude/business-os-production-els802` at start) |
-| Node       | v22.22.2                                   |
-| pnpm       | 10.33.0                                    |
-| Postgres   | 16 (service), migrated from zero           |
-| Redis      | 7 (service)                                |
+| Field    | Value                                                      |
+| -------- | ---------------------------------------------------------- |
+| Commit   | `8388cc809fe5913a76865f721f536d84601accb8`                 |
+| Branch   | `main` (= `claude/business-os-production-els802` at start) |
+| Node     | v22.22.2                                                   |
+| pnpm     | 10.33.0                                                    |
+| Postgres | 16 (service), migrated from zero                           |
+| Redis    | 7 (service)                                                |
 
 ## Results
 
-| Check                                | Result | Detail                                                        |
-| ------------------------------------ | ------ | ------------------------------------------------------------- |
-| `pnpm install --frozen-lockfile`     | pass   |                                                               |
-| `pnpm format:check`                  | pass   |                                                               |
-| `pnpm lint`                          | pass   | flat-config ESLint over every app and package                 |
-| `pnpm typecheck`                     | pass   | 14 projects                                                   |
-| `pnpm build`                         | pass   | site, dashboard, API. Requires `BOS_WORKSPACE_SLUG`; must not run with `NODE_ENV` exported as `development` (mixed React builds crash the export) |
-| `pnpm --filter @bos/database test`   | pass   | 5 RLS assertions, as the migration owner orchestrating two app-role connections |
-| `pnpm test`                          | pass   | 61 API tests + sanitize + business-types + database, `TEST_DATABASE_URL` as `bos_app` |
-| `pnpm db:migrate` from zero          | pass   | migrations → RLS → grants                                     |
-| `workspace:provision nuesheba`       | pass   | workspace, brand, location, pipeline, 6 stages, form          |
-| `workspace:seed-smoke nuesheba`      | pass   | fixture service + 2 pages                                     |
-| `pnpm smoke … --submit-form`         | pass   | 18/18 — including a real form submission creating a lead      |
-| `pnpm redirects:verify`              | pass   | 0 redirects imported (vacuous but wired)                      |
-| `pnpm check:readiness`               | **fail (by design)** | 5 blockers: placeholder phone, WhatsApp, email, street address, empty `sameAs` — all owner facts. CI runs this `continue-on-error`; the go-live checklist removes that. |
+| Check                              | Result               | Detail                                                                                                                                                                  |
+| ---------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm install --frozen-lockfile`   | pass                 |                                                                                                                                                                         |
+| `pnpm format:check`                | pass                 |                                                                                                                                                                         |
+| `pnpm lint`                        | pass                 | flat-config ESLint over every app and package                                                                                                                           |
+| `pnpm typecheck`                   | pass                 | 14 projects                                                                                                                                                             |
+| `pnpm build`                       | pass                 | site, dashboard, API. Requires `BOS_WORKSPACE_SLUG`; must not run with `NODE_ENV` exported as `development` (mixed React builds crash the export)                       |
+| `pnpm --filter @bos/database test` | pass                 | 5 RLS assertions, as the migration owner orchestrating two app-role connections                                                                                         |
+| `pnpm test`                        | pass                 | 61 API tests + sanitize + business-types + database, `TEST_DATABASE_URL` as `bos_app`                                                                                   |
+| `pnpm db:migrate` from zero        | pass                 | migrations → RLS → grants                                                                                                                                               |
+| `workspace:provision nuesheba`     | pass                 | workspace, brand, location, pipeline, 6 stages, form                                                                                                                    |
+| `workspace:seed-smoke nuesheba`    | pass                 | fixture service + 2 pages                                                                                                                                               |
+| `pnpm smoke … --submit-form`       | pass                 | 18/18 — including a real form submission creating a lead                                                                                                                |
+| `pnpm redirects:verify`            | pass                 | 0 redirects imported (vacuous but wired)                                                                                                                                |
+| `pnpm check:readiness`             | **fail (by design)** | 5 blockers: placeholder phone, WhatsApp, email, street address, empty `sameAs` — all owner facts. CI runs this `continue-on-error`; the go-live checklist removes that. |
 
 ## Task-board state at baseline (docs/tasks/README.md)
 

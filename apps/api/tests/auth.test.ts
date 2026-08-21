@@ -45,9 +45,16 @@ describe('login', () => {
     });
 
     assert.equal(response.statusCode, 200);
-    const body = response.json() as { accessToken: string; mfaRequired: boolean };
+    const body = response.json() as {
+      accessToken?: string;
+      mfaRequired: boolean;
+      user?: { email: string };
+    };
     assert.equal(body.mfaRequired, false);
-    assert.ok(body.accessToken.length > 20);
+    // The browser transport carries no token in the body at all — the session
+    // is the cookies. security-p0.test.ts proves the machine transport.
+    assert.equal(body.accessToken, undefined);
+    assert.ok(body.user?.email, 'the response says who signed in');
 
     // The refresh cookie must be HttpOnly and scoped to the refresh path, so
     // it is not attached to ordinary API calls and no script can read it.

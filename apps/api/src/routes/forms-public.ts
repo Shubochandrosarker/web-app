@@ -336,6 +336,7 @@ export function registerPublicFormRoutes(app: FastifyInstance, context: AppConte
           config.TURNSTILE_SECRET_KEY,
           body.turnstileToken ?? '',
           request.ip,
+          config.TURNSTILE_VERIFY_URL,
         );
         if (!verdict.success) {
           throw ApiError.badRequest(

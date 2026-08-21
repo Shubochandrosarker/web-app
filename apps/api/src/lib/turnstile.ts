@@ -11,15 +11,20 @@ export interface TurnstileVerdict {
   readonly reason?: string;
 }
 
+export const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+
 export async function verifyTurnstile(
   secret: string,
   token: string,
   remoteIp: string,
+  // Overridden only by tests, which point it at a local stub. The check
+  // itself — including its fail-closed path — is exercised for real.
+  verifyUrl: string = TURNSTILE_VERIFY_URL,
 ): Promise<TurnstileVerdict> {
   if (!token) return { success: false, reason: 'missing-token' };
 
   try {
-    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    const response = await fetch(verifyUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ secret, response: token, remoteip: remoteIp }),

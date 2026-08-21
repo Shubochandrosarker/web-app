@@ -57,7 +57,18 @@ export const apiEnvSchema = z.object({
   AUTH_SESSION_SECRET: secret('AUTH_SESSION_SECRET'),
   AUTH_ACCESS_TOKEN_TTL: z.coerce.number().int().min(60).default(900),
   AUTH_REFRESH_TOKEN_TTL: z.coerce.number().int().min(3600).default(2_592_000),
-  /** Domain the session cookies are scoped to, e.g. `.nuesheba.com`. */
+  /**
+   * Domain the session cookies are scoped to, e.g. `.nuesheba.com`.
+   *
+   * Leave unset. Host-only cookies (the default) are the smaller grant: a
+   * cookie scoped to a parent domain is presented to every present and future
+   * subdomain — a compromised or merely sloppy `blog.` or `status.` host
+   * becomes a session-theft vector for the dashboard. The deployed topology
+   * (browser → dashboard origin only; the dashboard's server talks to the API)
+   * needs no shared cookie at all. Set this only if a future browser-direct
+   * API client on a sibling subdomain genuinely requires it, and write the
+   * threat model down when you do.
+   */
   AUTH_COOKIE_DOMAIN: z.string().optional(),
   /** Issuer shown in an authenticator app next to the TOTP code. */
   AUTH_MFA_ISSUER: z.string().min(1).default('Business OS'),
@@ -71,6 +82,29 @@ export const apiEnvSchema = z.object({
   ANALYTICS_HASH_SECRET: secret('ANALYTICS_HASH_SECRET'),
   /** Server-side Turnstile key. Absent disables the check — logged at boot. */
   TURNSTILE_SECRET_KEY: z.string().optional(),
+  /**
+   * The matching public site key, served to the site with the form definition
+   * so the widget the visitor sees and the verification the API performs are
+   * decided in one place and cannot drift apart.
+   */
+  TURNSTILE_SITE_KEY: z.string().optional(),
+  /**
+   * Where token verification posts to. Only ever overridden by tests, which
+   * point it at a local stub — production has no reason to change it.
+   */
+  TURNSTILE_VERIFY_URL: z
+    .url()
+    .default('https://challenges.cloudflare.com/turnstile/v0/siteverify'),
+  /**
+   * Which upstream hops to believe about the client address.
+   * `none` | `loopback` (default — a reverse proxy on this host) | `all` |
+   * a hop count | a comma-separated list of addresses/CIDRs.
+   *
+   * `all` is only safe when the origin is unreachable except through the
+   * proxy; anywhere it can be reached directly, a spoofed X-Forwarded-For
+   * re-keys the rate limits and falsifies audit addresses.
+   */
+  API_TRUST_PROXY: z.string().default('loopback'),
   DASHBOARD_URL: z.url().optional(),
   /**
    * The public site's origin.
