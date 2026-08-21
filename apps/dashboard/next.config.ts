@@ -2,7 +2,13 @@ import type { NextConfig } from 'next';
 
 const config: NextConfig = {
   reactStrictMode: true,
-  transpilePackages: ['@bos/business-types', '@bos/config', '@bos/validation'],
+  transpilePackages: [
+    '@bos/business-types',
+    '@bos/config',
+    '@bos/validation',
+    '@bos/sections',
+    '@bos/sanitize',
+  ],
   poweredByHeader: false,
 
   /**

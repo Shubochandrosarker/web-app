@@ -84,7 +84,7 @@ function publiclyVisible() {
  * a public response carries what a page renders and nothing about how it was
  * made.
  */
-function toContentEntry(
+export function toContentEntry(
   entry: EntryRow,
   seo: SeoRow | null,
   references: SectionReferences,

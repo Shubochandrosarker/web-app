@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { apiFetch, can, getSession } from '@/lib/api';
 import { DashboardShell } from '@/components/shell';
 import { RelativeTime } from '@/components/relative-time';
+import { ContentRowActions, NewContentButton } from '@/components/content-create';
 
 export const metadata = { title: 'Content' };
 export const dynamic = 'force-dynamic';
@@ -55,6 +56,13 @@ export default async function ContentPage({
             {items.length} {items.length === 1 ? 'entry' : 'entries'}
           </p>
         </div>
+
+        {can(session, 'content.write') ? (
+          <div className="page-actions">
+            {/* Single-locale for now; the locale picker arrives with bn-BD. */}
+            <NewContentButton locale="en" />
+          </div>
+        ) : null}
 
         <form className="toolbar" method="get">
           <label className="visually-hidden" htmlFor="type">
@@ -116,6 +124,7 @@ export default async function ContentPage({
                 <th scope="col">Path</th>
                 <th scope="col">Status</th>
                 <th scope="col">Updated</th>
+                {can(session, 'content.write') ? <th scope="col">Actions</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -138,6 +147,15 @@ export default async function ContentPage({
                   <td>
                     <RelativeTime iso={entry.updatedAt} />
                   </td>
+                  {can(session, 'content.write') ? (
+                    <td>
+                      <ContentRowActions
+                        contentId={entry.id}
+                        status={entry.status}
+                        canDelete={can(session, 'content.publish')}
+                      />
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>

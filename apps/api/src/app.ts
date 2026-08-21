@@ -17,6 +17,7 @@ import { AuthService } from './auth/service.ts';
 import { registerAuthRoutes } from './auth/routes.ts';
 import { registerPublicContentRoutes } from './routes/content-public.ts';
 import { registerCmsRoutes } from './routes/cms.ts';
+import { registerCmsReferenceRoutes } from './routes/cms-references.ts';
 import { registerCrmRoutes } from './routes/crm.ts';
 import { registerPublicFormRoutes } from './routes/forms-public.ts';
 import { registerDocumentRoutes } from './routes/documents.ts';
@@ -342,6 +343,7 @@ export function buildApp({
         resolveWorkspaceId: ctx.resolveWorkspaceId,
       });
       registerCmsRoutes(instance, ctx);
+      registerCmsReferenceRoutes(instance, ctx);
     },
     'marketing.forms': (instance, ctx) => registerPublicFormRoutes(instance, ctx),
     'crm.leads': (instance, ctx) => registerCrmRoutes(instance, ctx),

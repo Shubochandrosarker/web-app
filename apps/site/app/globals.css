@@ -914,3 +914,12 @@ address {
   color: var(--color-muted, #6b7280);
   cursor: not-allowed;
 }
+
+.preview-banner {
+  background: #fef3c7;
+  border-bottom: 1px solid #f59e0b;
+  color: #78350f;
+  padding: 0.6rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+}

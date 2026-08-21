@@ -297,32 +297,57 @@ export async function setContentStatus(
   }
 }
 
-export async function saveContent(contentId: string, formData: FormData): Promise<ActionResult> {
-  const title = String(formData.get('title') ?? '').trim();
-  const excerpt = String(formData.get('excerpt') ?? '').trim();
-  const documentJson = String(formData.get('document') ?? '');
+export interface ContentPayload {
+  readonly title: string;
+  readonly excerpt: string;
+  readonly document: { sections: unknown[] };
+  readonly seo?: {
+    readonly title: string;
+    readonly description: string;
+    readonly canonicalUrl: string;
+    readonly noindex: boolean;
+    readonly nofollow: boolean;
+  };
+}
 
+export async function saveContent(
+  contentId: string,
+  payload: ContentPayload,
+  options: { autosave?: boolean } = {},
+): Promise<ActionResult> {
+  const title = payload.title.trim();
   if (!title) return { ok: false, message: 'A page needs a title.' };
-
-  let document: unknown;
-  try {
-    document = JSON.parse(documentJson);
-  } catch {
-    return {
-      ok: false,
-      message: 'The section document is not valid JSON.',
-      fieldErrors: { document: 'Check for a missing comma or bracket.' },
-    };
-  }
 
   try {
     const result = await apiFetch<{ warnings?: string[] }>(`/v1/cms/content/${contentId}`, {
       method: 'PATCH',
-      body: { title, excerpt, document },
+      body: {
+        title,
+        excerpt: payload.excerpt.trim(),
+        document: payload.document,
+        ...(payload.seo
+          ? {
+              seo: {
+                title: payload.seo.title.trim() || undefined,
+                description: payload.seo.description.trim() || undefined,
+                canonicalUrl: payload.seo.canonicalUrl.trim() || undefined,
+                noindex: payload.seo.noindex,
+                nofollow: payload.seo.nofollow,
+              },
+            }
+          : {}),
+      },
     });
 
-    revalidatePath(`/content/${contentId}`);
-    revalidatePath('/content');
+    /*
+     * Autosaves do not revalidate: refreshing the RSC tree under an editor
+     * mid-thought replaces the form they are typing into. The explicit save
+     * refreshes the list and detail views like any other mutation.
+     */
+    if (!options.autosave) {
+      revalidatePath(`/content/${contentId}`);
+      revalidatePath('/content');
+    }
 
     // Sanitisation warnings are surfaced rather than swallowed: an editor whose
     // link was dropped should be told which one and why.
@@ -334,6 +359,110 @@ export async function saveContent(contentId: string, formData: FormData): Promis
     };
   } catch (error) {
     return { ok: false, message: describe(error), ...fieldErrorsFrom(error) };
+  }
+}
+
+export async function createContent(input: {
+  type: string;
+  title: string;
+  slug: string;
+  path: string;
+  locale: string;
+}): Promise<ActionResult & { id?: string }> {
+  try {
+    const created = await apiFetch<{ id: string }>('/v1/cms/content', {
+      method: 'POST',
+      body: {
+        type: input.type,
+        title: input.title,
+        slug: input.slug,
+        path: input.path,
+        locale: input.locale,
+        document: { sections: [] },
+      },
+    });
+    revalidatePath('/content');
+    return { ok: true, id: created.id };
+  } catch (error) {
+    return { ok: false, message: describe(error), ...fieldErrorsFrom(error) };
+  }
+}
+
+export async function duplicateContent(contentId: string): Promise<ActionResult & { id?: string }> {
+  try {
+    const source = await apiFetch<{
+      type: string;
+      title: string;
+      slug: string;
+      path: string;
+      locale: string;
+      excerpt: string | null;
+      document: unknown;
+    }>(`/v1/cms/content/${contentId}`);
+
+    const suffix = `-copy-${Date.now().toString(36).slice(-4)}`;
+    const created = await apiFetch<{ id: string }>('/v1/cms/content', {
+      method: 'POST',
+      body: {
+        type: source.type,
+        title: `${source.title} (copy)`,
+        slug: `${source.slug}${suffix}`,
+        path: `${source.path}${suffix}`,
+        locale: source.locale,
+        excerpt: source.excerpt ?? undefined,
+        document: source.document,
+      },
+    });
+    revalidatePath('/content');
+    return { ok: true, id: created.id, message: 'Page duplicated as a draft.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function archiveContent(contentId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/cms/content/${contentId}/status`, {
+      method: 'POST',
+      body: { status: 'archived' },
+    });
+    revalidatePath('/content');
+    revalidatePath(`/content/${contentId}`);
+    return { ok: true, message: 'Page archived.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function restoreRevision(contentId: string, revision: number): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/cms/content/${contentId}/revisions/${revision}/restore`, {
+      method: 'POST',
+      body: {},
+    });
+    revalidatePath(`/content/${contentId}`);
+    return { ok: true, message: `Revision ${revision} restored.` };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/**
+ * Mint a preview link for a draft.
+ *
+ * Returns the URL in `message` — the one field ActionResult carries — so the
+ * client can open it. The token inside it dies on its own in minutes.
+ */
+export async function createPreview(contentId: string): Promise<ActionResult> {
+  try {
+    const minted = await apiFetch<{ token: string }>(`/v1/cms/content/${contentId}/preview-token`, {
+      method: 'POST',
+      body: {},
+    });
+    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/+$/, '');
+    return { ok: true, message: `${siteUrl}/preview?token=${encodeURIComponent(minted.token)}` };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
   }
 }
 
