@@ -21,10 +21,16 @@ import { registerCmsReferenceRoutes } from './routes/cms-references.ts';
 import { registerCrmRoutes } from './routes/crm.ts';
 import { registerPublicFormRoutes } from './routes/forms-public.ts';
 import { registerFormAdminRoutes } from './routes/forms-admin.ts';
+import { registerCommunicationRoutes } from './routes/communications.ts';
+import { registerWhatsappWebhookRoutes } from './routes/webhooks-whatsapp.ts';
 import { registerMediaRoutes } from './routes/media.ts';
 import { registerDocumentRoutes } from './routes/documents.ts';
 import { createOutboxHandler, registerInternalRoutes } from './routes/internal.ts';
-import { createEmailProvider, createWhatsappProvider } from './providers/notifications.ts';
+import {
+  createEmailProvider,
+  createWhatsappProvider,
+  type WhatsappProvider,
+} from './providers/notifications.ts';
 import { createScanner, type DocumentScanner } from './providers/scanner.ts';
 import { createStorage } from './providers/storage.ts';
 import { createDispatcher, type Dispatcher } from './services/dispatcher.ts';
@@ -53,6 +59,7 @@ export interface AppContext {
   readonly leads: ReturnType<typeof createLeadService>;
   readonly storage: ReturnType<typeof createStorage>;
   readonly scanner: DocumentScanner;
+  readonly whatsapp: WhatsappProvider;
 }
 
 export interface BuildAppOptions {
@@ -262,6 +269,7 @@ export function buildApp({
     leads,
     storage,
     scanner,
+    whatsapp,
   };
 
   /* ------------------------------------------------------------- probes */
@@ -352,7 +360,10 @@ export function buildApp({
       registerPublicFormRoutes(instance, ctx);
       registerFormAdminRoutes(instance, ctx);
     },
-    'crm.leads': (instance, ctx) => registerCrmRoutes(instance, ctx),
+    'crm.leads': (instance, ctx) => {
+      registerCrmRoutes(instance, ctx);
+      registerCommunicationRoutes(instance, ctx);
+    },
     'ops.documents': (instance, ctx) => registerDocumentRoutes(instance, ctx),
   };
 
@@ -369,6 +380,10 @@ export function buildApp({
   // until its messages reach the dead-letter queue.
   const internalDependencies = { email, whatsapp };
   registerInternalRoutes(app, context, internalDependencies);
+
+  // The WhatsApp webhook is infrastructure, like the internal routes: Meta
+  // must be able to reach it whether or not any module is mounted.
+  registerWhatsappWebhookRoutes(app, context);
 
   /*
    * The in-process dispatcher shares one handler definition with the cron

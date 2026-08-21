@@ -199,6 +199,26 @@ export const whatsappEnvSchema = z
     WHATSAPP_PROVIDER: z.enum(['meta_cloud', 'log']).default('log'),
     WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
     WHATSAPP_ACCESS_TOKEN: z.string().optional(),
+    /**
+     * The value echoed back during Meta's webhook subscription handshake.
+     * Any random string; it authenticates the *subscription*, not messages.
+     */
+    WHATSAPP_VERIFY_TOKEN: z.string().optional(),
+    /**
+     * The Meta app secret, used to verify X-Hub-Signature-256 on every
+     * webhook delivery. Without it inbound webhooks are refused outright —
+     * an unverifiable webhook is an open write path into the CRM.
+     */
+    WHATSAPP_APP_SECRET: z.string().optional(),
+    /**
+     * Which workspace inbound WhatsApp messages belong to, by slug.
+     *
+     * Meta's payload identifies the phone number, not the tenant; a
+     * single-tenant deployment states the mapping here. Unset, inbound
+     * messages are acknowledged and dropped with a warning rather than
+     * guessed into somebody's CRM.
+     */
+    WHATSAPP_INBOUND_WORKSPACE: z.string().optional(),
   })
   .refine(
     (env) =>

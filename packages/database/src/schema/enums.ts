@@ -78,9 +78,15 @@ export const messageStatus = pgEnum('message_status', [
   'queued',
   'sent',
   'delivered',
+  /** WhatsApp reports reads; email opens stay in message_events. */
+  'read',
   'bounced',
   'failed',
+  /** Inbound messages arrive received; they were never queued here. */
+  'received',
 ]);
+
+export const messageDirection = pgEnum('message_direction', ['outbound', 'inbound']);
 
 export const automationRunStatus = pgEnum('automation_run_status', [
   'running',

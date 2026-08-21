@@ -478,6 +478,25 @@ export async function createPreview(contentId: string): Promise<ActionResult> {
   }
 }
 
+/* --------------------------------------------------------- communications */
+
+export async function sendLeadWhatsapp(
+  leadId: string,
+  templateSlug: string,
+  variables: readonly string[],
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/crm/leads/${leadId}/whatsapp`, {
+      method: 'POST',
+      body: { templateSlug, variables },
+    });
+    revalidatePath(`/leads/${leadId}`);
+    return { ok: true, message: 'Message sent.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
 /* -------------------------------------------------------------- documents */
 
 /**

@@ -105,14 +105,14 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
   'comms.email': {
     group: 'Communications',
     href: '/email',
+    label: 'Email',
     permission: 'leads.read',
-    pending: true,
   },
   'comms.whatsapp': {
     group: 'Communications',
     href: '/whatsapp',
+    label: 'WhatsApp',
     permission: 'leads.read',
-    pending: true,
   },
   'analytics.traffic': {
     group: 'Analytics',
