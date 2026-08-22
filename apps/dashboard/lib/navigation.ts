@@ -68,7 +68,7 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
     label: 'Forms',
     permission: 'forms.read',
   },
-  'marketing.seo': { group: 'Content', href: '/seo', permission: 'seo.read', pending: true },
+  'marketing.seo': { group: 'Content', href: '/seo', label: 'SEO', permission: 'seo.read' },
   'ops.services': {
     group: 'Operations',
     href: '/services',

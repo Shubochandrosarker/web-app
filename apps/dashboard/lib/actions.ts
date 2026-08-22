@@ -797,6 +797,34 @@ export async function retryAutomationRun(
   }
 }
 
+export interface SeoSuggestions {
+  readonly metaTitle?: string;
+  readonly metaDescription?: string;
+  readonly questionsToAnswer: readonly string[];
+  readonly internalLinkSuggestions: readonly { toPath: string; anchor: string }[];
+  readonly improvements: readonly string[];
+}
+
+export async function suggestSeoImprovements(
+  contentId: string,
+): Promise<ActionResult & { suggestions?: SeoSuggestions | null; notes?: string }> {
+  try {
+    const result = await apiFetch<{
+      suggestions: SeoSuggestions | null;
+      notes?: string;
+      provider: string;
+    }>('/v1/seo/suggestions', { method: 'POST', body: { contentId } });
+    return {
+      ok: true,
+      suggestions: result.suggestions,
+      ...(result.notes ? { notes: result.notes } : {}),
+      message: `Suggestions from ${result.provider} — review before applying anything.`,
+    };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
 function describe(error: unknown): string {
   if (error instanceof ApiRequestError) {
     if (error.isUnauthenticated) return 'Your session has expired. Please sign in again.';

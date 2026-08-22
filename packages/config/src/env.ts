@@ -240,6 +240,20 @@ export const whatsappEnvSchema = z
     GSC_PROPERTY: z.string().optional(),
     /** Which workspace the ingested rows belong to, by slug. */
     GSC_WORKSPACE: z.string().optional(),
+
+    /* --------------------------------------------------------- AI provider */
+
+    /**
+     * Provider for AI content *suggestions* (never auto-published content).
+     * `none` is a first-class state: features render setup guidance instead
+     * of errors.
+     */
+    AI_PROVIDER: z.enum(['none', 'anthropic', 'openai', 'workers_ai']).default('none'),
+    AI_API_KEY: z.string().optional(),
+    /** Model override; each provider has a sensible cheap default. */
+    AI_MODEL: z.string().optional(),
+    /** Cloudflare account id, required only for AI_PROVIDER=workers_ai. */
+    CF_ACCOUNT_ID: z.string().optional(),
   })
   .refine(
     (env) =>
