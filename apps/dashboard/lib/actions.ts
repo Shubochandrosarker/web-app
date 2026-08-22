@@ -1105,6 +1105,134 @@ export async function cancelAppointment(
   }
 }
 
+/* ----------------------------------------------------------------- orders */
+
+export interface OrderItemPayload {
+  readonly serviceId: string | null;
+  readonly name: string;
+  readonly quantity: number;
+  readonly unitAmount: number;
+}
+
+export interface OrderPayload {
+  readonly contactId: string;
+  readonly leadId: string | null;
+  readonly currency: string;
+  readonly discountAmount: number;
+  readonly notes: string | null;
+  readonly items: OrderItemPayload[];
+}
+
+export async function saveOrder(
+  orderId: string | null,
+  input: OrderPayload,
+  options: { readonly notesOnly?: boolean } = {},
+): Promise<ActionResult & { id?: string }> {
+  if (!orderId && !input.contactId.trim()) {
+    return { ok: false, message: 'An order needs a contact.' };
+  }
+  if (!options.notesOnly && input.items.length === 0) {
+    return { ok: false, message: 'An order needs at least one line.' };
+  }
+
+  const items = input.items.map((item) => ({
+    serviceId: item.serviceId?.trim() || null,
+    name: item.name.trim() || undefined,
+    quantity: item.quantity,
+    unitAmount: item.unitAmount,
+  }));
+
+  try {
+    const result = await apiFetch<{ order: { id: string } }>(
+      orderId ? `/v1/orders/${orderId}` : '/v1/orders',
+      {
+        method: orderId ? 'PATCH' : 'POST',
+        body: orderId
+          ? options.notesOnly
+            ? { notes: input.notes?.trim() || null }
+            : { notes: input.notes?.trim() || null, discountAmount: input.discountAmount, items }
+          : {
+              contactId: input.contactId.trim(),
+              leadId: input.leadId?.trim() || null,
+              currency: input.currency.trim().toUpperCase(),
+              discountAmount: input.discountAmount,
+              notes: input.notes?.trim() || null,
+              items,
+            },
+      },
+    );
+    revalidatePath('/orders');
+    if (orderId) revalidatePath(`/orders/${orderId}`);
+    return { ok: true, id: result.order.id, message: 'Order saved.' };
+  } catch (error) {
+    return { ok: false, message: describe(error), ...fieldErrorsFrom(error) };
+  }
+}
+
+export async function setOrderStatus(
+  orderId: string,
+  status: string,
+  reason?: string,
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/orders/${orderId}/status`, {
+      method: 'POST',
+      body: { status, reason: reason?.trim() || null },
+    });
+    revalidatePath('/orders');
+    revalidatePath(`/orders/${orderId}`);
+    return { ok: true, message: `Order moved to ${status.replace('_', ' ')}.` };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function recordOrderPayment(
+  orderId: string,
+  input: {
+    readonly method: string;
+    readonly amount: number;
+    readonly reference: string | null;
+    readonly notes: string | null;
+  },
+): Promise<ActionResult> {
+  if (!Number.isInteger(input.amount) || input.amount <= 0) {
+    return { ok: false, message: 'The amount must be a positive whole number in minor units.' };
+  }
+  try {
+    await apiFetch(`/v1/orders/${orderId}/payments`, {
+      method: 'POST',
+      body: {
+        method: input.method,
+        amount: input.amount,
+        reference: input.reference?.trim() || null,
+        notes: input.notes?.trim() || null,
+        verified: true,
+      },
+    });
+    revalidatePath(`/orders/${orderId}`);
+    return { ok: true, message: 'Payment recorded.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function refundOrderPayment(
+  orderId: string,
+  paymentId: string,
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/orders/${orderId}/payments/${paymentId}/refund`, {
+      method: 'POST',
+      body: {},
+    });
+    revalidatePath(`/orders/${orderId}`);
+    return { ok: true, message: 'Payment marked refunded.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
 function describe(error: unknown): string {
   if (error instanceof ApiRequestError) {
     if (error.isUnauthenticated) return 'Your session has expired. Please sign in again.';

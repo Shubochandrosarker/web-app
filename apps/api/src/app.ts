@@ -31,6 +31,7 @@ import { registerDocumentRoutes } from './routes/documents.ts';
 import { registerServicesRoutes } from './routes/services.ts';
 import { registerLocationRoutes } from './routes/locations.ts';
 import { registerAppointmentRoutes } from './routes/appointments.ts';
+import { registerOrderRoutes } from './routes/orders.ts';
 import { registerReviewRoutes } from './routes/reviews.ts';
 import {
   buildAutomationEngine,
@@ -378,6 +379,7 @@ export function buildApp({
     'ops.documents': (instance, ctx) => registerDocumentRoutes(instance, ctx),
     'ops.services': (instance, ctx) => registerServicesRoutes(instance, ctx),
     'ops.scheduling': (instance, ctx) => registerAppointmentRoutes(instance, ctx),
+    'ops.orders': (instance, ctx) => registerOrderRoutes(instance, ctx),
     'reputation.local_seo': (instance, ctx) => registerLocationRoutes(instance, ctx),
     'reputation.reviews': (instance, ctx) => registerReviewRoutes(instance, ctx),
     'analytics.traffic': (instance, ctx) => registerAnalyticsRoutes(instance, ctx),

@@ -15,6 +15,7 @@ export * from './seo.ts';
 export * from './crm.ts';
 export * from './forms.ts';
 export * from './scheduling.ts';
+export * from './orders.ts';
 export * from './messaging.ts';
 export * from './automation.ts';
 export * from './analytics.ts';

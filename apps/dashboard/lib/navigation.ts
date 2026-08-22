@@ -90,8 +90,7 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
     group: 'Operations',
     href: '/orders',
     term: 'order',
-    permission: 'leads.read',
-    pending: true,
+    permission: 'orders.read',
   },
   'ops.workflows': {
     group: 'Operations',

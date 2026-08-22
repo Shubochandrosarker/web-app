@@ -50,6 +50,8 @@ export const PERMISSIONS = [
   'appointments.write',
   'reviews.read',
   'reviews.write',
+  'orders.read',
+  'orders.write',
   // Analytics and SEO
   'analytics.read',
   'seo.read',
@@ -93,6 +95,7 @@ const VIEWER: readonly Permission[] = [
   'locations.read',
   'appointments.read',
   'reviews.read',
+  'orders.read',
   'analytics.read',
   'seo.read',
   'settings.read',
@@ -129,6 +132,7 @@ const MANAGER: readonly Permission[] = [
   'locations.write',
   'appointments.write',
   'reviews.write',
+  'orders.write',
   'seo.write',
   'members.read',
 ];
