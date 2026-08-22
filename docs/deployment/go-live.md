@@ -44,6 +44,14 @@ curl -s https://staging.nuesheba.com | grep -o 'noindex' # present
 
 ## Stage 2 — Content and configuration
 
+- [ ] **The `Release gate` workflow (Actions → Release gate) is green.** It
+      re-runs everything CI verifies and then applies the gates that stay
+      advisory during development: the tenant-readiness check and the
+      high-severity dependency audit, with no `continue-on-error` anywhere.
+      A release that has not passed it does not ship.
+- [ ] **A restore drill has been executed and recorded**
+      (docs/operations/backup-restore.md). A backup nobody has restored from
+      is a hypothesis.
 - [ ] **`pnpm check:readiness nuesheba` exits zero.** This is a hard gate. It
       fails while the config carries a placeholder phone number, email or
       address, because those are published as the business's NAP in

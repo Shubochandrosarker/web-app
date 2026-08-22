@@ -1,0 +1,46 @@
+# The go-live gate.
+#
+# ci.yml runs on every push and keeps the tenant-readiness check advisory
+# (`continue-on-error`) so unrelated work is never blocked by an owner fact
+# that has not arrived yet. THIS workflow is the one a release runs through,
+# and here nothing is advisory: a placeholder phone number, a failing audit
+# or a security advisory fails the release. Trigger it manually from the
+# Actions tab (or on a release tag) as the final step of
+# docs/deployment/go-live.md.
+name: Release gate
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  verify:
+    name: Everything ci.yml verifies
+    uses: ./.github/workflows/ci.yml
+
+  hard-gates:
+    name: Gates that are advisory in CI, binding here
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # No continue-on-error: a placeholder in the tenant config is a
+      # publishable lie about a real business, and a release must not ship it.
+      - name: Tenant configuration is production-ready
+        run: pnpm run check:readiness
+
+      # High-severity advisories in production dependencies block the release;
+      # anything lower is visible in the log without failing it.
+      - name: Dependency audit (production, high+)
+        run: pnpm audit --prod --audit-level high

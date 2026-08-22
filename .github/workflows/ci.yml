@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Lets release.yml run this whole workflow as its verification stage.
+  workflow_call:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -229,22 +231,21 @@ jobs:
       - name: Build
         run: pnpm run build
 
-      # `next start` serves the build; `node --experimental-strip-types` runs
-      # the API from source rather than the bundle, because the bundle is
-      # covered by the deploy path and this job is about the slice.
-      - name: Start the API
+      # `next start` serves the built site and dashboard; the API runs its
+      # COMPILED bundle (dist/server.js) — the artifact a deploy ships, not
+      # the source tree. NODE_ENV stays development on purpose: the
+      # production guard demands a real email provider, CAPTCHA keys and a
+      # verified database certificate, none of which a throwaway CI stack
+      # has, and weakening the guard to satisfy CI would invert its point.
+      # The guard itself is covered by unit tests over assertProductionSafe.
+      - name: Start the API (compiled bundle)
         run: |
           cd apps/api
-          # Not NODE_ENV=production: the API refuses to start in production
-          # without a real email provider, a CAPTCHA key and a verified
-          # database certificate — none of which a throwaway CI stack has. The
-          # honest fix is to not claim to be production, rather than to weaken
-          # the guard that says so.
           NODE_ENV=development LOG_LEVEL=warn API_PORT=4000 \
             API_PUBLIC_URL=http://localhost:4000 \
             API_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001 \
             DASHBOARD_URL=http://localhost:3001 \
-            nohup node --experimental-strip-types src/server.ts > "$RUNNER_TEMP/api.log" 2>&1 &
+            nohup node dist/server.js > "$RUNNER_TEMP/api.log" 2>&1 &
           for _ in $(seq 1 60); do
             curl -fsS http://localhost:4000/health > /dev/null && exit 0
             sleep 1
@@ -295,6 +296,38 @@ jobs:
       - name: Verify every redirect resolves in one hop
         run: pnpm redirects:verify nuesheba --base http://localhost:3000
 
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      # Accessibility (axe, WCAG A/AA), keyboard operability and a mobile
+      # viewport, against the same running stack the slice just walked.
+      - name: Accessibility and keyboard end-to-end
+        run: pnpm e2e
+
+      # Core Web Vitals budget on the two pages that earn the traffic. The
+      # thresholds match TASK-302's acceptance criteria (>= 95 accessibility,
+      # >= 90 performance headroom for CI's shared runners).
+      - name: Lighthouse budget
+        run: |
+          for path in / /services/smoke-test-service; do
+            npx --yes lighthouse@12 "http://localhost:3000$path" \
+              --only-categories=performance,accessibility,seo \
+              --chrome-flags="--headless=new --no-sandbox" \
+              --output=json --output-path="$RUNNER_TEMP/lh.json" --quiet
+            node -e '
+              const report = require(process.env.RUNNER_TEMP + "/lh.json");
+              const scores = Object.fromEntries(
+                Object.entries(report.categories).map(([k, v]) => [k, Math.round(v.score * 100)]),
+              );
+              console.log(report.finalDisplayedUrl, JSON.stringify(scores));
+              const failures = [];
+              if (scores.performance < 90) failures.push(`performance ${scores.performance} < 90`);
+              if (scores.accessibility < 95) failures.push(`accessibility ${scores.accessibility} < 95`);
+              if (scores.seo < 95) failures.push(`seo ${scores.seo} < 95`);
+              if (failures.length) { console.error(failures.join("; ")); process.exit(1); }
+            '
+          done
+
       - name: Server logs
         if: failure()
         run: |
@@ -335,4 +368,26 @@ jobs:
       # ---------------------------------------------------------------------
       - name: Check tenant configuration
         run: pnpm run check:readiness
+        continue-on-error: true
+
+  audit:
+    name: Dependency audit (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Advisory here, binding in release.yml — the report shows on every
+      # run without blocking unrelated work on an upstream advisory.
+      - name: pnpm audit
+        run: pnpm audit --prod --audit-level high
         continue-on-error: true
