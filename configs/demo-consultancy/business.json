@@ -1,0 +1,37 @@
+{
+  "slug": "demo-consultancy",
+  "businessType": "professional_service",
+  "siteUrl": "https://demo-consultancy.example.com",
+  "brand": {
+    "name": "Demo Consultancy",
+    "tagline": "A fictional tenant that proves the platform is not NuESheba-shaped",
+    "primaryColor": "#0f766e"
+  },
+  "nap": {
+    "legalName": "Demo Consultancy LLC (fictional)",
+    "displayName": "Demo Consultancy",
+    "streetAddress": "100 Example Street",
+    "addressLocality": "Springfield",
+    "addressRegion": "IL",
+    "addressCountry": "US",
+    "telephone": "+15551230100",
+    "email": "hello@demo-consultancy.example.com",
+    "openingHours": ["Mo-Fr 09:00-17:00"],
+    "areaServed": ["United States"],
+    "sameAs": []
+  },
+  "locale": {
+    "defaultLocale": "en",
+    "supportedLocales": ["en"],
+    "timeZone": "America/Chicago",
+    "currency": "USD",
+    "phoneCountryCode": "+1"
+  },
+  "legal": {},
+  "modules": ["ops.scheduling", "crm.leads", "crm.contacts", "crm.tasks", "comms.email"],
+  "disabledModules": ["comms.whatsapp", "ops.documents"],
+  "features": {
+    "documentUpload": false,
+    "whatsappAcknowledgement": false
+  }
+}

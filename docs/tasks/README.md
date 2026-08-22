@@ -29,8 +29,8 @@ rather than re-litigated per task.
 | **TASK-208** | ~~Sitemaps, redirects, IndexNow~~       | 2     | 201        | ✅ done |
 | **TASK-209** | ~~Form _builder_ UI~~                   | 2     | 201        | ✅ done |
 | **TASK-210** | ~~WordPress content adapter~~           | 2     | 201        | ✅ done |
-| TASK-301     | NuESheba config, branding, navigation   | 3     | 206        | 2       |
-| TASK-302     | NuESheba service pages and guides       | 3     | 205, 301   | 6       |
+| TASK-301     | NuESheba config, branding, navigation ◑ | 3     | 206        | 1       |
+| TASK-302     | NuESheba service pages and guides ◑     | 3     | 205, 301   | 4       |
 | **TASK-303** | ~~Service request form and upload~~     | 3     | 209, 404   | ✅ done |
 | **TASK-401** | ~~Contacts UI~~                         | 4     | 105        | ✅ done |
 | **TASK-402** | ~~Leads, pipeline, tasks, timeline~~    | 4     | 401        | ✅ done |
@@ -47,7 +47,7 @@ rather than re-litigated per task.
 | **TASK-604** | ~~Search Console ingestion~~            | 6     | 601        | ✅ done |
 | **TASK-701** | ~~SEO audit engine~~                    | 7     | 207, 604   | ✅ done |
 | **TASK-702** | ~~AI content suggestions~~              | 7     | 701        | ✅ done |
-| TASK-801     | Second tenant extraction                | 8     | 603        | 5       |
+| **TASK-801** | ~~Second tenant extraction~~            | 8     | 603        | ✅ done |
 
 ◑ marks a task that is partly done: the mechanism exists and is tested, and
 what remains is a user interface for it. The estimate shown is what is left.
