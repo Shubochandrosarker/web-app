@@ -78,8 +78,12 @@ Run on desktop Chrome and a Pixel 7 viewport, 10/10 passing:
   submit, no pointer events).
 - Dashboard sign-in is keyboard-operable.
 
-CI additionally enforces Lighthouse budgets on `/` and the smoke service
-page: performance ≥ 90, accessibility ≥ 95, SEO ≥ 95.
+CI additionally runs Lighthouse on `/` and the smoke service page:
+accessibility ≥ 95 is binding (observed 100); the performance score is
+printed on every run but advisory there — shared runners scored identical
+code 90 and 81 back to back — with the binding ≥ 95 performance bar being
+the staging run in the go-live checklist. The SEO category is only
+meaningful on an indexable deployment, so it too belongs to staging.
 
 ## Honest limits of this report
 
