@@ -487,6 +487,23 @@ export function registerCmsRoutes(app: FastifyInstance, context: AppContext): vo
 
         if (!existing) throw ApiError.hidden('Content');
 
+        /*
+         * The scaffold marks every fact only the owner can supply as
+         * `[OWNER: …]`. Publishing (or scheduling) a page still carrying one
+         * would put a visible placeholder — or worse, an implied claim — in
+         * front of the public, so the marker is a hard stop here, at the one
+         * gate every route to "live" passes through.
+         */
+        if (input.status === 'published' || input.status === 'scheduled') {
+          const text = `${existing.title} ${JSON.stringify(existing.document)}`;
+          if (text.includes('[OWNER:')) {
+            throw ApiError.badRequest(
+              'This page still contains [OWNER: …] placeholders. Replace them with the ' +
+                'real information before publishing — placeholders must never go live.',
+            );
+          }
+        }
+
         const publishedAt =
           input.status === 'published'
             ? (existing.publishedAt ?? new Date())
