@@ -56,6 +56,12 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
+/** Form slugs are machine names; anything else never reaches the API URL. */
+const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,139}$/;
+/** Same-site paths only — plain segments, no scheme, no traversal, no query. */
+const SAFE_PATH_PATTERN = /^\/[A-Za-z0-9\-._~/]*$/;
+const LOCALE_PATTERN = /^[a-z]{2}(-[A-Za-z]{2})?$/i;
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ slug: string }> },
@@ -63,6 +69,13 @@ export async function POST(
   const { slug } = await params;
   const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
   const workspace = process.env.BOS_WORKSPACE_SLUG ?? '';
+
+  // The slug decides which API path this posts to, so it is validated
+  // against the same shape the API's own form slugs enforce before it is
+  // allowed anywhere near a URL — request-forgery ends here, not at the API.
+  if (!SLUG_PATTERN.test(slug)) {
+    return page('Not found', '<h1>That form does not exist.</h1>', '/');
+  }
 
   let formData: FormData;
   try {
@@ -81,17 +94,22 @@ export async function POST(
   );
   // A same-origin native POST sends the full referring path (the default
   // strict-origin-when-cross-origin policy only trims it cross-origin), which
-  // is exactly the landing page the visitor submitted from.
+  // is exactly the landing page the visitor submitted from. The header is
+  // still attacker-controllable, and the value ends up inside the HTML this
+  // route renders — so beyond escaping, only a plainly path-shaped value is
+  // accepted at all; anything else collapses to the root.
   const referer = request.headers.get('referer');
   let landingPath = '/';
   if (referer) {
     try {
-      landingPath = new URL(referer).pathname || '/';
+      const candidate = new URL(referer).pathname || '/';
+      if (SAFE_PATH_PATTERN.test(candidate)) landingPath = candidate;
     } catch {
       landingPath = '/';
     }
   }
-  const locale = String(formData.get('_bos_locale') ?? '') || undefined;
+  const rawLocale = String(formData.get('_bos_locale') ?? '');
+  const locale = LOCALE_PATTERN.test(rawLocale) ? rawLocale : undefined;
 
   const values: Record<string, string | boolean> = {};
   for (const [name, raw] of formData.entries()) {
