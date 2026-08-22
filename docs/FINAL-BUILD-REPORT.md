@@ -95,14 +95,25 @@ directory under `configs/`.
   the services table. Nothing publishes until a person supplies the facts.
   This is the owner-fact policy working as designed, not a shortcut.
 
+### Closed since this report was first written
+
+The orders gap named here is closed: orders, order items and payments have
+their tables, migration and FORCE'd RLS; item rows snapshot the catalogue at
+order time; statuses move along an explicit transition map; manual payments
+(cash, bank transfer, bKash, Nagad) are attributed staff records behind a
+PaymentProvider abstraction that requires no gateway credentials, with
+verify and refund flows and events through the outbox. `/orders` is live in
+navigation, and no module is marked pending any more. The later closeout
+phases also added the scheduling engine (availability, capacity, conflicts,
+reminders), cron-triggered automations, attribution/revenue analytics,
+AEO/GEO audit checks, global search, notifications, team operations, the
+audit log screen and a third fixture tenant (`demo-tours`) exercising the
+operations stack. The current state lives in
+[`FINAL-PRODUCTION-READINESS.md`](./FINAL-PRODUCTION-READINESS.md).
+
 ### Explicitly still incomplete
 
-Orders remain hidden in navigation. This checkout has no orders table,
-migration, payment reconciliation contract or fulfilment lifecycle, so the
-module is not represented as complete. That is a concrete engineering gap,
-not an owner-fact placeholder.
-
-NuESheba is also not production-ready until the real owner facts and provider
+NuESheba is not production-ready until the real owner facts and provider
 credentials in `docs/owner-input-required.md` are supplied and the staging,
 backup, browser and provider checks in the go-live runbook are executed.
 

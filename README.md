@@ -29,18 +29,19 @@ packages/
 ├── content/       ContentProvider interface + internal / wordpress / markdown
 ├── seo/           Metadata, JSON-LD graph, sitemaps, IndexNow
 ├── automation/    Trigger / condition / action definition language
-├── events/        The 38-event canonical catalogue
+├── events/        The 44-event canonical catalogue
 ├── validation/    Shared Zod primitives and attribution shapes
 └── config/        Environment schemas, validated at boot
 
 configs/
 ├── nuesheba/          The production tenant (environment.releaseEligible: true)
-└── demo-consultancy/  Fictional fixture proving portability — never released
+├── demo-consultancy/  Fictional fixture proving portability — never released
+└── demo-tours/        Fictional tour operator exercising the operations stack
 
 docs/
 ├── architecture/  The V1 blueprint (10 documents)
 ├── database/      Schema conventions, migrations, RLS verification
-└── tasks/         30 implementation tasks across 8 phases
+└── tasks/         The implementation task board across 8 phases
 ```
 
 ## Getting started
@@ -116,7 +117,7 @@ sign in → dashboard → lead → move it along the pipeline → note, task, fo
 
 |                  |                                                                             |
 | ---------------- | --------------------------------------------------------------------------- |
-| Schema           | 58 tables, 19 enums, RLS on every tenant-scoped table, `FORCE`d             |
+| Schema           | 63 tables, 21 enums, RLS on every tenant-scoped table, `FORCE`d             |
 | Tenant isolation | Verified against a real database, as the least-privilege application role   |
 | Authentication   | Argon2id, opaque tokens, refresh rotation with reuse detection, TOTP MFA    |
 | Authorisation    | Every route declares a permission; the boot fails if one does not           |
@@ -127,10 +128,16 @@ sign in → dashboard → lead → move it along the pipeline → note, task, fo
 
 On top of that slice: media library, form builder, private documents with
 malware-scan gating, email/WhatsApp channels, the durable automation engine
-and builder, analytics with Search Console ingestion, the SEO audit with AI
-suggestions, and the Services, Appointments, Reviews, Local SEO and Landing
-Pages management screens. The remaining owner-gated launch facts are listed
-in [`docs/owner-input-required.md`](docs/owner-input-required.md) and
+and builder (event **and cron-schedule** triggers, clone, health metrics, a
+failed-run queue, an hourly send ceiling), analytics with Search Console
+ingestion, attribution models and verified-payment revenue, the SEO audit
+with AEO/GEO checks and AI suggestions, the Services / Appointments (with a
+real availability, capacity and conflict engine plus reminders) / **Orders
+with manual payments** / Reviews / Local SEO / Landing Pages management
+screens, global search, a notifications centre, team operations with
+invitations and the last-owner guard, and a readable audit log. The
+remaining owner-gated launch facts are listed in
+[`docs/owner-input-required.md`](docs/owner-input-required.md) and
 [the go-live checklist](docs/deployment/go-live.md).
 
 ### Release posture
