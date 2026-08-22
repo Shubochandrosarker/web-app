@@ -19,6 +19,9 @@ const JOBS = [
   // Same backstop for automation runs sleeping past every instance's loop.
   'automations.resume',
   'analytics.rollup',
+  // Search Console lags ~2 days; the nightly pull re-ingests a trailing
+  // window and upserts, so late data corrects itself.
+  'gsc.ingest',
   'documents.retention_sweep',
   // Publishes content whose scheduled time has passed.
   'seo.audit_refresh',

@@ -219,6 +219,27 @@ export const whatsappEnvSchema = z
      * guessed into somebody's CRM.
      */
     WHATSAPP_INBOUND_WORKSPACE: z.string().optional(),
+
+    /* ------------------------------------------------- Google Search Console */
+
+    /**
+     * Service-account credentials for the Search Console API. The owner
+     * creates a service account, grants it (restricted) access to the
+     * property in Search Console, and supplies both values; without them
+     * ingestion is silently skipped and the dashboard shows setup
+     * instructions instead of data.
+     */
+    GSC_CLIENT_EMAIL: z.string().email().optional(),
+    /** PEM private key; newlines may be escaped as \n. */
+    GSC_PRIVATE_KEY: z.string().optional(),
+    /**
+     * The Search Console property to read, e.g. `sc-domain:example.com` or
+     * `https://example.com/`. Defaults to the workspace's `siteUrl` with a
+     * trailing slash (a URL-prefix property).
+     */
+    GSC_PROPERTY: z.string().optional(),
+    /** Which workspace the ingested rows belong to, by slug. */
+    GSC_WORKSPACE: z.string().optional(),
   })
   .refine(
     (env) =>

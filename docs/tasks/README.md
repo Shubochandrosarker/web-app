@@ -43,8 +43,8 @@ rather than re-litigated per task.
 | **TASK-505** | ~~WhatsApp — templates and inbound~~    | 5     | 502        | ✅ done |
 | **TASK-601** | ~~Analytics collection and ingestion~~  | 6     | 501        | ✅ done |
 | **TASK-602** | ~~Channel resolution and attribution~~  | 6     | 601, 402   | ✅ done |
-| TASK-603     | Analytics dashboard                     | 6     | 602, 107   | 5       |
-| TASK-604     | Search Console ingestion                | 6     | 601        | 3       |
+| **TASK-603** | ~~Analytics dashboard~~                 | 6     | 602, 107   | ✅ done |
+| **TASK-604** | ~~Search Console ingestion~~            | 6     | 601        | ✅ done |
 | TASK-701     | SEO audit engine                        | 7     | 207, 604   | 6       |
 | TASK-702     | AI content suggestions                  | 7     | 701        | 5       |
 | TASK-801     | Second tenant extraction                | 8     | 603        | 5       |

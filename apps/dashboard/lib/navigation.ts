@@ -117,20 +117,20 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
   'analytics.traffic': {
     group: 'Analytics',
     href: '/analytics',
+    label: 'Traffic',
     permission: 'analytics.read',
-    pending: true,
   },
   'analytics.search': {
     group: 'Analytics',
     href: '/analytics/search',
+    label: 'Search',
     permission: 'analytics.read',
-    pending: true,
   },
   'analytics.conversion': {
     group: 'Analytics',
     href: '/analytics/conversion',
+    label: 'Conversions',
     permission: 'analytics.read',
-    pending: true,
   },
   'reputation.reviews': {
     group: 'Reputation',

@@ -1386,3 +1386,24 @@ fieldset.field > legend {
   font-size: 0.8rem;
   max-height: 32rem;
 }
+
+/* --------------------------------------------------------------- analytics */
+
+.bar-cell {
+  width: 30%;
+  min-width: 8rem;
+}
+
+.bar {
+  display: inline-block;
+  height: 0.8rem;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--color-primary, #1a56db);
+  vertical-align: middle;
+}
+
+.stat-delta {
+  font-size: 0.78rem;
+  margin: 0.15rem 0 0;
+}

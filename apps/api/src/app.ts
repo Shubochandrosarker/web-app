@@ -23,6 +23,7 @@ import { registerPublicFormRoutes } from './routes/forms-public.ts';
 import { registerFormAdminRoutes } from './routes/forms-admin.ts';
 import { registerCommunicationRoutes } from './routes/communications.ts';
 import { registerAutomationRoutes } from './routes/automations.ts';
+import { registerAnalyticsRoutes } from './routes/analytics.ts';
 import { registerWhatsappWebhookRoutes } from './routes/webhooks-whatsapp.ts';
 import { registerMediaRoutes } from './routes/media.ts';
 import { registerDocumentRoutes } from './routes/documents.ts';
@@ -370,6 +371,7 @@ export function buildApp({
       registerCommunicationRoutes(instance, ctx);
     },
     'ops.documents': (instance, ctx) => registerDocumentRoutes(instance, ctx),
+    'analytics.traffic': (instance, ctx) => registerAnalyticsRoutes(instance, ctx),
     'ops.workflows': (instance, ctx) =>
       registerAutomationRoutes(instance, ctx, {
         engine: buildAutomationEngine(ctx, { email, whatsapp, logger: app.log }),

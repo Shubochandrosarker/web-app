@@ -217,3 +217,38 @@ export const analyticsEventsRelations = relations(analyticsEvents, ({ one }) => 
     references: [analyticsSessions.id],
   }),
 }));
+
+/**
+ * Google Search Console, one row per day × dimension value.
+ *
+ * The same shape as `analytics_daily` on purpose: `dimension` is `query`,
+ * `page`, `device` or `country`, and re-ingesting a day overwrites it, so a
+ * retried job produces the same numbers rather than doubled ones. GSC data
+ * arrives ~2 days late; the ingest job walks a trailing window.
+ */
+export const searchConsoleDaily = pgTable(
+  'search_console_daily',
+  {
+    id: primaryKeyColumn(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    date: date('date').notNull(),
+    dimension: varchar('dimension', { length: 16 }).notNull(),
+    dimensionValue: varchar('dimension_value', { length: 1024 }).notNull().default(''),
+    clicks: integer('clicks').notNull().default(0),
+    impressions: integer('impressions').notNull().default(0),
+    /** Average position × 100, stored as an integer to avoid float drift. */
+    positionTimes100: integer('position_times_100').notNull().default(0),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('search_console_daily_key').on(
+      table.workspaceId,
+      table.date,
+      table.dimension,
+      table.dimensionValue,
+    ),
+    index('search_console_daily_workspace_date_idx').on(table.workspaceId, table.date),
+  ],
+);

@@ -42,6 +42,7 @@ const commonMarketing = [
   'marketing.forms',
   'marketing.seo',
   'analytics.traffic',
+  'analytics.search',
   'analytics.conversion',
 ] as const satisfies readonly ModuleId[];
 

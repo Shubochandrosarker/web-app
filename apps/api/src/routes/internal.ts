@@ -355,6 +355,25 @@ export function registerInternalRoutes(
     },
   );
 
+  /**
+   * Pull the trailing Search Console window. A no-op (null) when the
+   * service-account credentials are not configured — the dashboard's search
+   * screen explains the setup instead.
+   */
+  app.post('/v1/internal/jobs/gsc.ingest', { config: { bosAccess: internalRoute() } }, async () => {
+    const { ingestSearchConsole } = await import('../services/search-console.ts');
+    const ingested = await ingestSearchConsole({
+      db,
+      config,
+      resolveWorkspaceId,
+      logger: app.log,
+    }).catch((error: unknown) => {
+      app.log.error({ err: error }, 'Search Console ingest failed');
+      return { error: String(error).slice(0, 500) } as Record<string, unknown>;
+    });
+    return { ingested };
+  });
+
   app.post(
     '/v1/internal/jobs/analytics.rollup',
     { config: { bosAccess: internalRoute() } },
