@@ -52,6 +52,19 @@ rather than re-litigated per task.
 ◑ marks a task that is partly done: the mechanism exists and is tested, and
 what remains is a user interface for it. The estimate shown is what is left.
 
+## Closeout module status
+
+These modules were added after the original 30-task board was written:
+
+| Module        | Current state                                                            |
+| ------------- | ------------------------------------------------------------------------ |
+| Services      | API and dashboard catalogue CRUD, archive and duplicate                  |
+| Appointments  | API and dashboard lifecycle over the existing scheduling schema          |
+| Reviews       | API and dashboard capture, moderation and response fields                |
+| Local SEO     | API and dashboard location/NAP management and coverage checks            |
+| Landing pages | Dashboard projection over CMS `landing_page` entries                     |
+| Orders        | Incomplete — schema, migration, payments and fulfilment are still absent |
+
 ## What "done" means for the launch
 
 The completed rows above are the **production vertical slice**: a visitor finds
@@ -59,13 +72,21 @@ a service page, submits a request, becomes a CRM lead with a confirmation, and
 staff work it from the dashboard — with authentication, RBAC, tenant isolation,
 sanitisation, a real CSP and a smoke test around it.
 
-What remains is the analytics dashboard and Search Console ingestion
-(TASK-603/604), the SEO intelligence layer (TASK-207/701/702), the WordPress
-adapter (TASK-210), the second tenant (TASK-801), and NuESheba's real content
-and configuration (TASK-301/302 — gated on owner facts recorded in
-[`docs/owner-input-required.md`](../owner-input-required.md)). None of the
-engineering items block the platform being deployable; the owner-fact items
-block the public NuESheba launch specifically.
+The closeout branch adds the previously hidden Services, Appointments, Reviews,
+Local SEO and Landing Pages projections. Orders remain incomplete because this
+checkout does not yet contain their schema, migration, payment reconciliation
+or fulfilment lifecycle. NuESheba's real content and configuration (TASK-301/302)
+remain gated on owner facts recorded in
+[`docs/owner-input-required.md`](../owner-input-required.md).
+
+The readiness command has two deliberate scopes:
+
+- `pnpm check:readiness <tenant>` checks one named tenant and fails for an
+  unknown slug.
+- `pnpm check:readiness --release-eligible` checks only configs that explicitly
+  set `environment.releaseEligible` to `true`. Demo and fixture tenants remain
+  available for tests without blocking a production release. The release
+  workflow names `nuesheba` explicitly as an additional safety check.
 
 ## Detail
 

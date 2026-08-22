@@ -77,6 +77,14 @@ export const localeSettingsSchema = z.object({
     .optional(),
 });
 
+/**
+ * Release policy is explicit so fixture tenants cannot accidentally become
+ * production release inputs merely because they live under `configs/`.
+ */
+export const environmentSchema = z.object({
+  releaseEligible: z.boolean().default(false),
+});
+
 export const workspaceConfigSchema = z
   .object({
     slug,
@@ -87,6 +95,7 @@ export const workspaceConfigSchema = z
     nap: napSchema,
     locale: localeSettingsSchema,
     legal: legalSchema.default({}),
+    environment: environmentSchema.default({ releaseEligible: false }),
     /**
      * Modules on top of the business-type preset. Dependencies are resolved
      * automatically — listing `ops.scheduling` also enables `ops.services`.

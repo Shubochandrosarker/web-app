@@ -28,6 +28,10 @@ import { registerSeoRoutes } from './routes/seo.ts';
 import { registerWhatsappWebhookRoutes } from './routes/webhooks-whatsapp.ts';
 import { registerMediaRoutes } from './routes/media.ts';
 import { registerDocumentRoutes } from './routes/documents.ts';
+import { registerServicesRoutes } from './routes/services.ts';
+import { registerLocationRoutes } from './routes/locations.ts';
+import { registerAppointmentRoutes } from './routes/appointments.ts';
+import { registerReviewRoutes } from './routes/reviews.ts';
 import {
   buildAutomationEngine,
   createOutboxHandler,
@@ -372,6 +376,10 @@ export function buildApp({
       registerCommunicationRoutes(instance, ctx);
     },
     'ops.documents': (instance, ctx) => registerDocumentRoutes(instance, ctx),
+    'ops.services': (instance, ctx) => registerServicesRoutes(instance, ctx),
+    'ops.scheduling': (instance, ctx) => registerAppointmentRoutes(instance, ctx),
+    'reputation.local_seo': (instance, ctx) => registerLocationRoutes(instance, ctx),
+    'reputation.reviews': (instance, ctx) => registerReviewRoutes(instance, ctx),
     'analytics.traffic': (instance, ctx) => registerAnalyticsRoutes(instance, ctx),
     'marketing.seo': (instance, ctx) => registerSeoRoutes(instance, ctx),
     'ops.workflows': (instance, ctx) =>

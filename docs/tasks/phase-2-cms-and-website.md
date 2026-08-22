@@ -86,7 +86,7 @@ purge for the affected URL.
 
 **Depends on** 103 · **Estimate** 4 days
 
-Ten renderers still stubbed: `service-grid`, `testimonials`, `reviews`,
+The original renderer inventory included: `service-grid`, `testimonials`, `reviews`,
 `pricing`, `team`, `locations`, `gallery`, `logos`, `form`, `related-content`.
 
 **Acceptance**

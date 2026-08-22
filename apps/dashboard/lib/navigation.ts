@@ -60,7 +60,6 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
     group: 'Content',
     href: '/landing-pages',
     permission: 'content.read',
-    pending: true,
   },
   'marketing.forms': {
     group: 'Content',
@@ -74,14 +73,12 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
     href: '/services',
     term: 'service',
     permission: 'services.read',
-    pending: true,
   },
   'ops.scheduling': {
     group: 'Operations',
     href: '/appointments',
     term: 'appointment',
-    permission: 'services.read',
-    pending: true,
+    permission: 'appointments.read',
   },
   'ops.documents': {
     group: 'Operations',
@@ -135,14 +132,12 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
   'reputation.reviews': {
     group: 'Reputation',
     href: '/reviews',
-    permission: 'content.read',
-    pending: true,
+    permission: 'reviews.read',
   },
   'reputation.local_seo': {
     group: 'Reputation',
     href: '/local-seo',
     permission: 'seo.read',
-    pending: true,
   },
 };
 

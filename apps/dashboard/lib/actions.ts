@@ -482,6 +482,154 @@ export async function createPreview(contentId: string): Promise<ActionResult> {
   }
 }
 
+/* -------------------------------------------------------------- services */
+
+export interface ServicePayload {
+  readonly name: string;
+  readonly slug: string;
+  readonly summary: string | null;
+  readonly status: 'draft' | 'scheduled' | 'published' | 'archived';
+  readonly priceAmount: number | null;
+  readonly priceCurrency: string | null;
+  readonly priceNote: string | null;
+  readonly durationMinutes: number | null;
+  readonly turnaroundNote: string | null;
+  readonly requirements: string[];
+  readonly bookable: boolean;
+}
+
+export async function saveService(
+  serviceId: string | null,
+  input: ServicePayload,
+): Promise<ActionResult & { id?: string }> {
+  if (!input.name.trim()) return { ok: false, message: 'A service needs a name.' };
+  if (!input.slug.trim()) return { ok: false, message: 'A service needs a URL slug.' };
+
+  try {
+    const result = await apiFetch<{ service: { id: string } }>(
+      serviceId ? `/v1/services/${serviceId}` : '/v1/services',
+      {
+        method: serviceId ? 'PATCH' : 'POST',
+        body: {
+          ...input,
+          name: input.name.trim(),
+          slug: input.slug.trim().toLowerCase(),
+          summary: input.summary?.trim() || null,
+          priceNote: input.priceNote?.trim() || null,
+          turnaroundNote: input.turnaroundNote?.trim() || null,
+          requirements: input.requirements.map((item) => item.trim()).filter(Boolean),
+        },
+      },
+    );
+    revalidatePath('/services');
+    if (serviceId) revalidatePath(`/services/${serviceId}`);
+    return { ok: true, id: result.service.id, message: 'Service saved.' };
+  } catch (error) {
+    return { ok: false, message: describe(error), ...fieldErrorsFrom(error) };
+  }
+}
+
+export async function archiveService(serviceId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/services/${serviceId}/archive`, { method: 'POST', body: {} });
+    revalidatePath('/services');
+    revalidatePath(`/services/${serviceId}`);
+    return { ok: true, message: 'Service archived.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function duplicateService(serviceId: string): Promise<ActionResult & { id?: string }> {
+  try {
+    const result = await apiFetch<{ service: { id: string } }>(
+      `/v1/services/${serviceId}/duplicate`,
+      {
+        method: 'POST',
+        body: {},
+      },
+    );
+    revalidatePath('/services');
+    return { ok: true, id: result.service.id, message: 'Service duplicated as a draft.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/* ------------------------------------------------------------- locations */
+
+export interface LocationPayload {
+  readonly slug: string;
+  readonly legalName: string;
+  readonly displayName: string;
+  readonly streetAddress: string;
+  readonly addressLocality: string;
+  readonly addressRegion: string | null;
+  readonly postalCode: string | null;
+  readonly addressCountry: string;
+  readonly latitude: string | null;
+  readonly longitude: string | null;
+  readonly telephone: string;
+  readonly whatsapp: string | null;
+  readonly email: string;
+  readonly openingHours: string[];
+  readonly areaServed: string[];
+  readonly sameAs: string[];
+  readonly googleBusinessProfileUrl: string | null;
+  readonly isPrimary: boolean;
+}
+
+export async function saveLocation(
+  locationId: string | null,
+  input: LocationPayload,
+): Promise<ActionResult & { id?: string }> {
+  if (!input.displayName.trim()) return { ok: false, message: 'A location needs a display name.' };
+  try {
+    const result = await apiFetch<{ location: { id: string } }>(
+      locationId ? `/v1/locations/${locationId}` : '/v1/locations',
+      {
+        method: locationId ? 'PATCH' : 'POST',
+        body: {
+          ...input,
+          slug: input.slug.trim().toLowerCase(),
+          legalName: input.legalName.trim(),
+          displayName: input.displayName.trim(),
+          streetAddress: input.streetAddress.trim(),
+          addressLocality: input.addressLocality.trim(),
+          addressRegion: input.addressRegion?.trim() || null,
+          postalCode: input.postalCode?.trim() || null,
+          addressCountry: input.addressCountry.trim().toUpperCase(),
+          telephone: input.telephone.trim(),
+          whatsapp: input.whatsapp?.trim() || null,
+          email: input.email.trim(),
+          latitude: input.latitude?.trim() || null,
+          longitude: input.longitude?.trim() || null,
+          openingHours: input.openingHours.map((item) => item.trim()).filter(Boolean),
+          areaServed: input.areaServed.map((item) => item.trim()).filter(Boolean),
+          sameAs: input.sameAs.map((item) => item.trim()).filter(Boolean),
+          googleBusinessProfileUrl: input.googleBusinessProfileUrl?.trim() || null,
+        },
+      },
+    );
+    revalidatePath('/local-seo');
+    if (locationId) revalidatePath(`/local-seo/${locationId}`);
+    return { ok: true, id: result.location.id, message: 'Location saved.' };
+  } catch (error) {
+    return { ok: false, message: describe(error), ...fieldErrorsFrom(error) };
+  }
+}
+
+export async function archiveLocation(locationId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/locations/${locationId}/archive`, { method: 'POST', body: {} });
+    revalidatePath('/local-seo');
+    revalidatePath(`/local-seo/${locationId}`);
+    return { ok: true, message: 'Location archived.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
 /* --------------------------------------------------------- communications */
 
 export async function sendLeadWhatsapp(
@@ -820,6 +968,138 @@ export async function suggestSeoImprovements(
       ...(result.notes ? { notes: result.notes } : {}),
       message: `Suggestions from ${result.provider} — review before applying anything.`,
     };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/* --------------------------------------------------------------- reviews */
+
+export interface ReviewPayload {
+  readonly source: 'internal' | 'google' | 'facebook' | 'other';
+  readonly externalId: string | null;
+  readonly authorName: string;
+  readonly rating: number;
+  readonly title: string | null;
+  readonly body: string | null;
+  readonly contactId: string | null;
+  readonly response: string | null;
+  readonly reviewedAt?: string;
+}
+
+export async function saveReview(
+  reviewId: string | null,
+  input: ReviewPayload,
+): Promise<ActionResult & { id?: string }> {
+  if (!input.authorName.trim()) return { ok: false, message: 'A review needs an author name.' };
+  if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) {
+    return { ok: false, message: 'Rating must be between one and five.' };
+  }
+
+  try {
+    const result = await apiFetch<{ review: { id: string } }>(
+      reviewId ? `/v1/reviews/${reviewId}` : '/v1/reviews',
+      {
+        method: reviewId ? 'PATCH' : 'POST',
+        body: {
+          ...input,
+          authorName: input.authorName.trim(),
+          externalId: input.externalId?.trim() || null,
+          title: input.title?.trim() || null,
+          body: input.body?.trim() || null,
+          contactId: input.contactId?.trim() || null,
+          response: input.response?.trim() || null,
+        },
+      },
+    );
+    revalidatePath('/reviews');
+    if (reviewId) revalidatePath(`/reviews/${reviewId}`);
+    return { ok: true, id: result.review.id, message: 'Review saved.' };
+  } catch (error) {
+    return { ok: false, message: describe(error), ...fieldErrorsFrom(error) };
+  }
+}
+
+export async function moderateReview(reviewId: string, approved: boolean): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/reviews/${reviewId}/${approved ? 'approve' : 'reject'}`, {
+      method: 'POST',
+      body: {},
+    });
+    revalidatePath('/reviews');
+    revalidatePath(`/reviews/${reviewId}`);
+    return { ok: true, message: approved ? 'Review approved.' : 'Review rejected.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/* ----------------------------------------------------------- appointments */
+
+export interface AppointmentPayload {
+  readonly contactId: string;
+  readonly leadId: string | null;
+  readonly serviceId: string | null;
+  readonly staffProfileId: string | null;
+  readonly locationId: string | null;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly timeZone: string;
+  readonly channel: 'on_site' | 'phone' | 'video' | 'whatsapp';
+  readonly meetingUrl: string | null;
+  readonly notes: string | null;
+  readonly status?: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show';
+}
+
+export async function saveAppointment(
+  appointmentId: string | null,
+  input: AppointmentPayload,
+): Promise<ActionResult & { id?: string }> {
+  if (!input.contactId.trim()) return { ok: false, message: 'A contact is required.' };
+  if (!input.startsAt || !input.endsAt)
+    return { ok: false, message: 'Start and end times are required.' };
+
+  try {
+    const startsAt = new Date(input.startsAt).toISOString();
+    const endsAt = new Date(input.endsAt).toISOString();
+    const result = await apiFetch<{ appointment: { id: string } }>(
+      appointmentId ? `/v1/appointments/${appointmentId}` : '/v1/appointments',
+      {
+        method: appointmentId ? 'PATCH' : 'POST',
+        body: {
+          ...input,
+          startsAt,
+          endsAt,
+          contactId: input.contactId.trim(),
+          leadId: input.leadId?.trim() || null,
+          serviceId: input.serviceId?.trim() || null,
+          staffProfileId: input.staffProfileId?.trim() || null,
+          locationId: input.locationId?.trim() || null,
+          meetingUrl: input.meetingUrl?.trim() || null,
+          notes: input.notes?.trim() || null,
+        },
+      },
+    );
+    revalidatePath('/appointments');
+    if (appointmentId) revalidatePath(`/appointments/${appointmentId}`);
+    return { ok: true, id: result.appointment.id, message: 'Appointment saved.' };
+  } catch (error) {
+    return { ok: false, message: describe(error), ...fieldErrorsFrom(error) };
+  }
+}
+
+export async function cancelAppointment(
+  appointmentId: string,
+  reason?: string,
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/appointments/${appointmentId}/cancel`, {
+      method: 'POST',
+      body: { reason: reason?.trim() || null },
+    });
+    revalidatePath('/appointments');
+    revalidatePath(`/appointments/${appointmentId}`);
+    return { ok: true, message: 'Appointment cancelled.' };
   } catch (error) {
     return { ok: false, message: describe(error) };
   }

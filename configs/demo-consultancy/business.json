@@ -2,6 +2,9 @@
   "slug": "demo-consultancy",
   "businessType": "professional_service",
   "siteUrl": "https://demo-consultancy.example.com",
+  "environment": {
+    "releaseEligible": false
+  },
   "brand": {
     "name": "Demo Consultancy",
     "tagline": "A fictional tenant that proves the platform is not NuESheba-shaped",

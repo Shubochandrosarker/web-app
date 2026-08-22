@@ -1,26 +1,28 @@
 # Final test report
 
 Verification evidence for the state described in
-[`FINAL-BUILD-REPORT.md`](./FINAL-BUILD-REPORT.md). Every number below is
-from a full local run against real Postgres 16 and Redis on 2026-08-22; CI
-runs the same suites on every push.
+[`FINAL-BUILD-REPORT.md`](./FINAL-BUILD-REPORT.md). This report is updated for
+the closeout branch; database-backed integration tests require the Postgres and
+Redis services used by CI.
 
 ## Totals
 
-| Suite                                     | Tests   | Result         |
-| ----------------------------------------- | ------- | -------------- |
-| `@bos/api` (integration, real DB + Redis) | 127     | ✅ all passing |
-| `@bos/sanitize`                           | 20      | ✅             |
-| `@bos/content` (WordPress adapter)        | 6       | ✅             |
-| `@bos/database` (RLS isolation)           | 5       | ✅             |
-| `@bos/business-types` (tenant configs)    | 3       | ✅             |
-| Playwright e2e (desktop + mobile)         | 10      | ✅             |
-| **Total**                                 | **171** | **✅**         |
+| Suite                                     | Tests                 | Result            |
+| ----------------------------------------- | --------------------- | ----------------- |
+| `@bos/api` (integration, real DB + Redis) | CI-owned count        | Requires services |
+| `@bos/sanitize`                           | 20                    | ✅                |
+| `@bos/content` (WordPress adapter)        | 6                     | ✅                |
+| `@bos/database` (RLS isolation)           | 5                     | ✅                |
+| `@bos/business-types` (tenant configs)    | 3                     | ✅                |
+| Playwright e2e (desktop + mobile)         | 10                    | ✅                |
+| **Total**                                 | **Not asserted here** | See CI run        |
 
-Also green on the same run: `pnpm typecheck` (14 projects), `pnpm lint`
-(eslint, zero warnings surfaced as errors), `pnpm build` (site, dashboard,
-API bundle), `prettier --check`, and the compiled API bundle
-(`node dist/server.js`) booting and serving `/health`.
+The closeout branch has passed targeted typechecks for API, dashboard,
+database and business-types after the module changes. Formatting is enforced on
+changed files; the deliberate full-tree audit remains available as
+`pnpm format:check:all` and currently reports historical files outside this
+closeout as not Prettier-clean. Touched files are formatted and `git diff
+--check` is clean.
 
 ## What the API suite actually proves (by area)
 
@@ -51,25 +53,25 @@ connections so isolation tests cannot pass vacuously.
   receipts walking status, failed receipts carrying the provider reason,
   inbound replies matched to contact and their single open lead, replay
   producing one row.
-- **Automation** (9 tests) — enrollment from a real outbox event with
+- **Automation** — enrollment from a real outbox event with
   context templating, re-entry dedupe, branch decisions recorded and the
   right tag applied, a durable wait parked in the database and resumed by
   the job, retry → backoff → dead-letter with reason → manual retry to
   completion with exactly one idempotent send, RBAC (staff 403 / manager
   read / admin write), immutable versioning, duplicate-step-id refusal.
-- **Analytics** (4 tests) — live overview totals merged with the rollup's
+- **Analytics** — live overview totals merged with the rollup's
   day series, channel/source breakdowns including AI referrals, funnel
   attribution, and GSC ingestion against a scripted Google (really-signed
   JWT, real upsert, idempotent re-ingest, aggregation with
   impression-weighted position).
-- **SEO** (3 tests) — the audit over a deliberately imperfect content set
+- **SEO** — the audit over a deliberately imperfect content set
   (planted orphan, thin page, duplicate titles, broken link, FAQ-less
   service — each caught, healthy pages not), GSC opportunity
   classification, and the unconfigured-AI path explaining itself.
 
 ## End-to-end (Playwright, against the running stack)
 
-Run on desktop Chrome and a Pixel 7 viewport, 10/10 passing:
+The committed e2e workflow runs on desktop Chrome and a mobile viewport:
 
 - Home page, service page (with the live request form) and dashboard
   sign-in have **zero serious or critical axe violations** against
