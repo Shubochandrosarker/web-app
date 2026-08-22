@@ -34,7 +34,8 @@ packages/
 └── config/        Environment schemas, validated at boot
 
 configs/
-└── nuesheba/      The first tenant — brand, NAP, locale, modules
+├── nuesheba/          The production tenant (environment.releaseEligible: true)
+└── demo-consultancy/  Fictional fixture proving portability — never released
 
 docs/
 ├── architecture/  The V1 blueprint (10 documents)
@@ -93,7 +94,7 @@ See [the database README](docs/database/README.md).
 | `pnpm db:migrate`           | Apply migrations, RLS and grants                       |
 | `pnpm workspace:provision`  | Create or refresh a tenant from `configs/<slug>/`      |
 | `pnpm workspace:seed-smoke` | Fixture pages for local dev and CI. Never production   |
-| `pnpm check:readiness`      | Fail if a tenant config still carries placeholder data |
+| `pnpm check:readiness`      | Fail if a release-eligible config carries placeholders |
 | `pnpm smoke`                | Smoke-test a deployment. Non-zero means do not ship    |
 | `pnpm redirects:import`     | Import a URL migration map                             |
 | `pnpm redirects:verify`     | Check the deployed site honours it, in one hop         |
@@ -124,12 +125,23 @@ sign in → dashboard → lead → move it along the pipeline → note, task, fo
 | Tests            | Unit and integration suites, with real Postgres/Redis integration in CI     |
 | Docs             | 10 architecture documents, 17 ADRs, deployment and go-live runbooks         |
 
-The current closeout branch also includes the Services, Appointments, Reviews,
-Local SEO and Landing Pages management screens. Orders remain deliberately
-blocked until their schema, migration and payment/fulfilment contract are
-implemented. The remaining owner-gated launch facts are listed in
-[`docs/owner-input-required.md`](docs/owner-input-required.md) and
+On top of that slice: media library, form builder, private documents with
+malware-scan gating, email/WhatsApp channels, the durable automation engine
+and builder, analytics with Search Console ingestion, the SEO audit with AI
+suggestions, and the Services, Appointments, Reviews, Local SEO and Landing
+Pages management screens. The remaining owner-gated launch facts are listed
+in [`docs/owner-input-required.md`](docs/owner-input-required.md) and
 [the go-live checklist](docs/deployment/go-live.md).
+
+### Release posture
+
+`environment.releaseEligible` in each tenant config decides who can be the
+subject of a release: fixtures are reported informationally and can never
+gate — or be — a release, and the Release Gate workflow names the production
+tenant explicitly, so a real tenant cannot be silently skipped. The principle
+throughout: **no invented business facts, ever** — where a fact is missing
+the platform renders nothing, blocks publishing (`[OWNER: …]` markers refuse
+to publish), and records the gap in `docs/owner-input-required.md`.
 
 ## Deploying
 
