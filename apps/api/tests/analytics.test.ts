@@ -191,7 +191,7 @@ describe('search console', () => {
     const fakeFetch: typeof fetch = async (input, init) => {
       const url = String(input);
       calls.push(url);
-      if (url.includes('oauth2.googleapis.com')) {
+      if (new URL(url).hostname === 'oauth2.googleapis.com') {
         return new Response(JSON.stringify({ access_token: 'fake-token' }), { status: 200 });
       }
       const body = JSON.parse(String(init?.body ?? '{}')) as { dimensions?: string[] };

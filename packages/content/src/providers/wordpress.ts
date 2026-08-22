@@ -24,6 +24,17 @@ export interface WordPressProviderOptions {
 const RESOURCES = ['pages', 'posts'] as const;
 type Resource = (typeof RESOURCES)[number];
 
+/**
+ * Linear-time trailing-slash trim. The obvious `/\/+$/` regex is quadratic
+ * on adversarial input (CodeQL js/polynomial-redos), and path strings here
+ * come from a remote API.
+ */
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) end -= 1;
+  return value.slice(0, end);
+}
+
 /** Decode the handful of entities WordPress emits into rendered titles. */
 function decodeEntities(text: string): string {
   return (
@@ -80,7 +91,7 @@ export class WordPressContentProvider implements ContentProvider {
 
   constructor(options: WordPressProviderOptions) {
     this.options = options;
-    this.endpoint = options.apiUrl.replace(/\/+$/, '');
+    this.endpoint = trimTrailingSlashes(options.apiUrl);
   }
 
   /* ------------------------------------------------------------- transport */
@@ -141,7 +152,7 @@ export class WordPressContentProvider implements ContentProvider {
   /** The site path for an item, taken from its canonical link. */
   private pathFor(item: WordPressItem): string {
     try {
-      const path = new URL(item.link).pathname.replace(/\/+$/, '');
+      const path = trimTrailingSlashes(new URL(item.link).pathname);
       return path === '' ? '/' : path;
     } catch {
       return `/${item.slug}`;
@@ -182,7 +193,7 @@ export class WordPressContentProvider implements ContentProvider {
   /* --------------------------------------------------------------- reading */
 
   async getByPath(path: string, locale: string): Promise<ContentEntry | null> {
-    const wanted = path.replace(/\/+$/, '') || '/';
+    const wanted = trimTrailingSlashes(path) || '/';
     const slug = wanted.split('/').filter(Boolean).pop() ?? '';
     if (!slug) {
       // The homepage: WordPress models it as a page marked "front"; the
