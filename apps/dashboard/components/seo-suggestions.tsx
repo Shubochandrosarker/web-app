@@ -1,7 +1,12 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { suggestSeoImprovements, type ActionResult, type SeoSuggestions } from '@/lib/actions';
+import {
+  applySeoSuggestion,
+  suggestSeoImprovements,
+  type ActionResult,
+  type SeoSuggestions,
+} from '@/lib/actions';
 
 /**
  * AI suggestions, for a human to read and act on.
@@ -23,6 +28,7 @@ export function SeoSuggestionsPanel({
     (ActionResult & { suggestions?: SeoSuggestions | null; notes?: string }) | null
   >(null);
   const [pending, startTransition] = useTransition();
+  const [applyMessage, setApplyMessage] = useState('');
 
   if (!aiConfigured) {
     return (
@@ -98,6 +104,21 @@ export function SeoSuggestionsPanel({
                 <code>{suggestions.metaTitle}</code>{' '}
                 <span className="muted">({suggestions.metaTitle.length} chars)</span>
               </p>
+              <button
+                type="button"
+                className="button"
+                disabled={pending}
+                onClick={() =>
+                  startTransition(async () => {
+                    const outcome = await applySeoSuggestion(contentId, {
+                      title: suggestions.metaTitle ?? undefined,
+                    });
+                    setApplyMessage(outcome.message ?? '');
+                  })
+                }
+              >
+                Apply as SEO title
+              </button>
             </div>
           ) : null}
           {suggestions.metaDescription ? (
@@ -107,7 +128,27 @@ export function SeoSuggestionsPanel({
                 <code>{suggestions.metaDescription}</code>{' '}
                 <span className="muted">({suggestions.metaDescription.length} chars)</span>
               </p>
+              <button
+                type="button"
+                className="button"
+                disabled={pending}
+                onClick={() =>
+                  startTransition(async () => {
+                    const outcome = await applySeoSuggestion(contentId, {
+                      description: suggestions.metaDescription ?? undefined,
+                    });
+                    setApplyMessage(outcome.message ?? '');
+                  })
+                }
+              >
+                Apply as meta description
+              </button>
             </div>
+          ) : null}
+          {applyMessage ? (
+            <p className="muted" role="status">
+              {applyMessage}
+            </p>
           ) : null}
           {suggestions.questionsToAnswer.length > 0 ? (
             <div className="field">

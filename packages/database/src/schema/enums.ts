@@ -125,3 +125,29 @@ export const documentStatus = pgEnum('document_status', [
 ]);
 
 export const reviewSource = pgEnum('review_source', ['internal', 'google', 'facebook', 'other']);
+
+export const orderStatus = pgEnum('order_status', [
+  /** Being assembled by staff; totals and items still editable. */
+  'draft',
+  /** Sent to / agreed with the customer; awaiting confirmation or payment. */
+  'pending',
+  'confirmed',
+  /** Work underway (document collection, processing, delivery prep). */
+  'in_progress',
+  'completed',
+  'cancelled',
+  /** Terminal: money went back after completion. */
+  'refunded',
+]);
+
+/**
+ * Payment *status* is platform behaviour and an enum; payment *method*
+ * (cash, bKash, Nagad, bank transfer…) is country- and tenant-varying
+ * vocabulary, so it is a varchar validated at the API boundary instead.
+ */
+export const paymentStatus = pgEnum('payment_status', [
+  'pending',
+  'verified',
+  'failed',
+  'refunded',
+]);

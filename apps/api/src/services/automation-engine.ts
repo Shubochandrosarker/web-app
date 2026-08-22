@@ -3,6 +3,7 @@ import { and, eq, isNull, lte, sql } from 'drizzle-orm';
 import { schema, withWorkspace, withoutTenantScope, type Database } from '@bos/database';
 import {
   automationDefinitionSchema,
+  cronMatches,
   evaluateCondition,
   readPath,
   type AutomationDefinition,
@@ -114,6 +115,7 @@ export function createAutomationEngine(deps: AutomationEngineDeps) {
     automationId: string,
     version: number,
     event: EngineEvent,
+    dedupeOverride?: string,
   ): Promise<void> {
     const definition = await loadDefinition(event.workspaceId, automationId, version);
     if (!definition) return;
@@ -125,7 +127,8 @@ export function createAutomationEngine(deps: AutomationEngineDeps) {
     const entityId = leadId ?? contactId;
 
     const dedupeKey =
-      definition.reentry === 'always'
+      dedupeOverride ??
+      (definition.reentry === 'always'
         ? null
         : definition.reentry === 'once_per_contact'
           ? contactId
@@ -133,7 +136,7 @@ export function createAutomationEngine(deps: AutomationEngineDeps) {
             : null
           : entityId
             ? `${entityType}:${entityId}`
-            : null;
+            : null);
 
     const context = await buildInitialContext(event, contactId, leadId);
 
@@ -597,6 +600,16 @@ export function createAutomationEngine(deps: AutomationEngineDeps) {
       waitingForEvent: null,
       failureReason: reason,
     });
+    // A dead-lettered run needs a person; tell the people who can fix it.
+    const { fanOutNotification } = await import('./notify.ts');
+    await fanOutNotification(db, run.workspaceId, {
+      kind: 'automation.failed',
+      severity: 'critical',
+      title: 'An automation run failed and needs review',
+      body: reason.slice(0, 300),
+      href: '/automations',
+      roles: ['owner', 'admin', 'manager'],
+    }).catch(() => undefined);
   }
 
   /* -------------------------------------------------------------- resuming */
@@ -768,12 +781,74 @@ export function createAutomationEngine(deps: AutomationEngineDeps) {
     return true;
   }
 
+  /**
+   * Enroll runs for schedule-triggered automations whose cron matches the
+   * current minute in their workspace's time zone. Idempotent per minute via
+   * the dedupe key `schedule:{windowStart}` — the dispatcher can call this
+   * every few seconds and each window still enrolls exactly once.
+   */
+  async function runDueSchedules(now = new Date()): Promise<number> {
+    const windowStart = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
+
+    const candidates = await withoutTenantScope(db, (tx) =>
+      tx
+        .select({
+          id: schema.automations.id,
+          workspaceId: schema.automations.workspaceId,
+          currentVersion: schema.automations.currentVersion,
+          timeZone: schema.workspaces.timeZone,
+        })
+        .from(schema.automations)
+        .innerJoin(schema.workspaces, eq(schema.workspaces.id, schema.automations.workspaceId))
+        .where(
+          and(
+            eq(schema.automations.enabled, true),
+            eq(schema.automations.triggerKind, 'schedule'),
+            isNull(schema.automations.deletedAt),
+          ),
+        ),
+    );
+
+    let enrolled = 0;
+    for (const candidate of candidates) {
+      try {
+        const definition = await loadDefinition(
+          candidate.workspaceId,
+          candidate.id,
+          candidate.currentVersion,
+        );
+        if (!definition || definition.trigger.kind !== 'schedule') continue;
+        if (!cronMatches(definition.trigger.cron, windowStart, candidate.timeZone)) continue;
+
+        await enrollOne(
+          candidate.id,
+          candidate.currentVersion,
+          {
+            workspaceId: candidate.workspaceId,
+            name: 'schedule.time',
+            payload: { scheduledFor: windowStart.toISOString() },
+          },
+          `schedule:${windowStart.toISOString()}`,
+        );
+        enrolled += 1;
+      } catch (error) {
+        // A malformed cron in one automation must not stop the sweep.
+        logger.error(
+          { automationId: candidate.id, err: String(error) },
+          'Schedule enrollment failed',
+        );
+      }
+    }
+    return enrolled;
+  }
+
   return {
     enrollFromEvent,
     resumeDueRuns,
     resumeWaitingForEvent,
     retryRun,
     continueRun,
+    runDueSchedules,
   };
 }
 
@@ -811,6 +886,8 @@ async function executeAction(
       const subject = renderContextTemplate(String(stepConfig.subject ?? ''), context);
       const body = renderContextTemplate(String(stepConfig.body ?? ''), context);
       if (!subject || !body) throw new Error('send_email needs a subject and a body.');
+
+      await assertUnderHourlySendLimit(db, workspaceId, config.AUTOMATION_HOURLY_SEND_LIMIT);
 
       const reserved = await reserveAutomationMessage(
         db,
@@ -882,6 +959,8 @@ async function executeAction(
         }),
         context,
       );
+
+      await assertUnderHourlySendLimit(db, workspaceId, config.AUTOMATION_HOURLY_SEND_LIMIT);
 
       const reserved = await reserveAutomationMessage(
         db,
@@ -1106,6 +1185,38 @@ async function executeAction(
 
     default:
       throw new Error(`The "${step.action}" action is not available yet.`);
+  }
+}
+
+/**
+ * The safety ceiling on automation-driven sending. A runaway loop or a
+ * mis-scoped trigger must never empty a send quota or spam a customer list;
+ * over the ceiling the step fails with a retryable error, so the run backs
+ * off and the queue drains inside the next hour instead of dropping sends.
+ */
+async function assertUnderHourlySendLimit(
+  db: Database,
+  workspaceId: string,
+  limit: number,
+): Promise<void> {
+  const hourAgo = new Date(Date.now() - 3600_000);
+  const [row] = await withWorkspace(db, workspaceId, (tx) =>
+    tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.messages)
+      .where(
+        and(
+          sql`${schema.messages.automationRunId} is not null`,
+          sql`${schema.messages.createdAt} >= ${hourAgo}`,
+        ),
+      ),
+  );
+  if ((row?.count ?? 0) >= limit) {
+    throw new Error(
+      `Automation send limit reached (${limit}/hour for this workspace). ` +
+        'The step will retry after the backoff; raise AUTOMATION_HOURLY_SEND_LIMIT ' +
+        'only if this volume is intended.',
+    );
   }
 }
 

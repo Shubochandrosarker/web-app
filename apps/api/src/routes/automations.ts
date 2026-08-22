@@ -6,6 +6,7 @@ import {
   automationDefinitionSchema,
   automationStepSchema,
   conditionSchema,
+  parseCron,
   type AutomationStep,
 } from '@bos/automation';
 import { EVENT_NAMES } from '@bos/events';
@@ -24,13 +25,34 @@ import type { AppContext } from '../app.ts';
  * through a three-day sequence finishes the sequence they entered, not the
  * one somebody edited on day two.
  *
- * Only event triggers are accepted for now — they are the only kind the
- * engine enrolls from. Offering schedule or webhook triggers in the builder
- * before the engine honours them would create automations that silently
- * never run, which is worse than a smaller menu.
+ * Event and schedule triggers are accepted — the two kinds the engine
+ * honours (events enroll from the outbox; schedules from the dispatcher's
+ * minute sweep). Webhook triggers stay out of the menu until the engine
+ * enrolls from them: offering a trigger that silently never runs is worse
+ * than a smaller menu. A schedule's cron is validated at save time, loudly.
  */
 
 const eventTrigger = z.object({ kind: z.literal('event'), event: z.enum(EVENT_NAMES) });
+const scheduleTrigger = z.object({
+  kind: z.literal('schedule'),
+  /** Five-field cron, evaluated in the workspace's time zone. */
+  cron: z.string().min(9).max(120),
+});
+
+const automationTrigger = z
+  .discriminatedUnion('kind', [eventTrigger, scheduleTrigger])
+  .superRefine((trigger, context) => {
+    if (trigger.kind !== 'schedule') return;
+    try {
+      parseCron(trigger.cron);
+    } catch (error) {
+      context.addIssue({
+        code: 'custom',
+        path: ['cron'],
+        message: error instanceof Error ? error.message : 'Invalid cron expression.',
+      });
+    }
+  });
 
 const automationInput = z.object({
   name: z.string().min(1).max(200),
@@ -39,7 +61,7 @@ const automationInput = z.object({
     .regex(/^[a-z0-9][a-z0-9-]{0,139}$/, 'must be lowercase letters, digits and hyphens')
     .optional(),
   description: z.string().max(1000).optional(),
-  trigger: eventTrigger,
+  trigger: automationTrigger,
   condition: conditionSchema.optional(),
   steps: z.array(automationStepSchema).min(1).max(100),
   reentry: z.enum(['once_per_contact', 'once_per_entity', 'always']).default('once_per_entity'),
@@ -186,11 +208,34 @@ export function registerAutomationRoutes(
           )
           .limit(1);
 
-        return { row, definition: version?.definition ?? null };
+        // Definition history: every save is a version, and runs pin theirs,
+        // so the list is the full audit trail of what could have executed.
+        const versions = await tx
+          .select({
+            version: schema.automationVersions.version,
+            createdAt: schema.automationVersions.createdAt,
+          })
+          .from(schema.automationVersions)
+          .where(eq(schema.automationVersions.automationId, id))
+          .orderBy(desc(schema.automationVersions.version))
+          .limit(50);
+
+        const [metrics] = await tx
+          .select({
+            total: sql<number>`count(*)::int`,
+            completed: sql<number>`count(*) filter (where ${schema.automationRuns.status} = 'completed')::int`,
+            failed: sql<number>`count(*) filter (where ${schema.automationRuns.status} = 'failed')::int`,
+            active: sql<number>`count(*) filter (where ${schema.automationRuns.status} in ('running', 'waiting'))::int`,
+            lastRunAt: sql<string | null>`max(${schema.automationRuns.startedAt})`,
+          })
+          .from(schema.automationRuns)
+          .where(eq(schema.automationRuns.automationId, id));
+
+        return { row, definition: version?.definition ?? null, versions, metrics };
       });
       if (!result) throw ApiError.hidden('Automation');
 
-      const { row, definition } = result;
+      const { row, definition, versions, metrics } = result;
       return {
         id: row.id,
         slug: row.slug,
@@ -199,8 +244,67 @@ export function registerAutomationRoutes(
         enabled: row.enabled,
         currentVersion: row.currentVersion,
         definition,
+        versions: versions.map((entry) => ({
+          version: entry.version,
+          createdAt: entry.createdAt.toISOString(),
+        })),
+        metrics: {
+          total: metrics?.total ?? 0,
+          completed: metrics?.completed ?? 0,
+          failed: metrics?.failed ?? 0,
+          active: metrics?.active ?? 0,
+          lastRunAt: metrics?.lastRunAt ?? null,
+        },
         updatedAt: row.updatedAt.toISOString(),
       };
+    },
+  );
+
+  /**
+   * The failed-run queue, across every automation: what needs a person, with
+   * enough context to decide between replaying and fixing the definition.
+   */
+  app.get(
+    '/v1/automations/runs',
+    { config: { bosAccess: requirePermission('automations.read') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      const query = z
+        .object({
+          status: z.enum(['failed', 'running', 'waiting', 'completed', 'cancelled']).optional(),
+          limit: z.coerce.number().int().min(1).max(200).default(50),
+        })
+        .parse(request.query);
+
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        const conditions = query.status ? [eq(schema.automationRuns.status, query.status)] : [];
+        const rows = await tx
+          .select({
+            id: schema.automationRuns.id,
+            automationId: schema.automationRuns.automationId,
+            automationName: schema.automations.name,
+            status: schema.automationRuns.status,
+            failureReason: schema.automationRuns.failureReason,
+            startedAt: schema.automationRuns.startedAt,
+            completedAt: schema.automationRuns.completedAt,
+          })
+          .from(schema.automationRuns)
+          .innerJoin(
+            schema.automations,
+            eq(schema.automations.id, schema.automationRuns.automationId),
+          )
+          .where(conditions.length > 0 ? and(...conditions) : undefined)
+          .orderBy(desc(schema.automationRuns.startedAt))
+          .limit(query.limit);
+
+        return {
+          items: rows.map((row) => ({
+            ...row,
+            startedAt: row.startedAt.toISOString(),
+            completedAt: row.completedAt?.toISOString() ?? null,
+          })),
+        };
+      });
     },
   );
 
@@ -225,7 +329,7 @@ export function registerAutomationRoutes(
             enabled: false,
             currentVersion: 1,
             triggerKind: input.trigger.kind,
-            triggerEvent: input.trigger.event,
+            triggerEvent: input.trigger.kind === 'event' ? input.trigger.event : null,
             createdBy: requireUserId(request),
           })
           .returning({ id: schema.automations.id });
@@ -324,7 +428,7 @@ export function registerAutomationRoutes(
             description: input.description ?? null,
             currentVersion: nextVersion,
             triggerKind: input.trigger.kind,
-            triggerEvent: input.trigger.event,
+            triggerEvent: input.trigger.kind === 'event' ? input.trigger.event : null,
             updatedAt: new Date(),
           })
           .where(eq(schema.automations.id, id));
@@ -371,6 +475,101 @@ export function registerAutomationRoutes(
       );
 
       return { id, enabled };
+    },
+  );
+
+  /**
+   * Clone: a disabled copy of the current version under a fresh slug. The
+   * safe way to iterate on a live sequence — edit the copy, enable it, then
+   * disable the original — without a mid-flight version change.
+   */
+  app.post(
+    '/v1/automations/:id/clone',
+    { config: { bosAccess: requirePermission('automations.write') } },
+    async (request, reply) => {
+      const workspace = requireWorkspace(request);
+      const { id } = z.object({ id: z.uuid() }).parse(request.params);
+      const userId = requireUserId(request);
+
+      const created = await withWorkspace(db, workspace.workspaceId, async (tx) => {
+        const [source] = await tx
+          .select()
+          .from(schema.automations)
+          .where(and(eq(schema.automations.id, id), isNull(schema.automations.deletedAt)))
+          .limit(1);
+        if (!source) return null;
+
+        const [versionRow] = await tx
+          .select({ definition: schema.automationVersions.definition })
+          .from(schema.automationVersions)
+          .where(
+            and(
+              eq(schema.automationVersions.automationId, id),
+              eq(schema.automationVersions.version, source.currentVersion),
+            ),
+          )
+          .limit(1);
+        if (!versionRow) return null;
+
+        const baseSlug = `${source.slug}-copy`.slice(0, 140);
+        let nextSlug = baseSlug;
+        for (let suffix = 2; suffix < 100; suffix += 1) {
+          const [taken] = await tx
+            .select({ id: schema.automations.id })
+            .from(schema.automations)
+            .where(and(eq(schema.automations.slug, nextSlug), isNull(schema.automations.deletedAt)))
+            .limit(1);
+          if (!taken) break;
+          const suffixText = `-${suffix}`;
+          nextSlug = `${baseSlug.slice(0, 140 - suffixText.length)}${suffixText}`;
+        }
+
+        const [clone] = await tx
+          .insert(schema.automations)
+          .values({
+            workspaceId: workspace.workspaceId,
+            slug: nextSlug,
+            name: `${source.name} (copy)`,
+            description: source.description,
+            enabled: false,
+            currentVersion: 1,
+            triggerKind: source.triggerKind,
+            triggerEvent: source.triggerEvent,
+            createdBy: userId,
+          })
+          .returning({ id: schema.automations.id });
+
+        const sourceDefinition = automationDefinitionSchema.parse(versionRow.definition);
+        const definition = automationDefinitionSchema.parse({
+          ...sourceDefinition,
+          id: clone!.id,
+          workspaceId: workspace.workspaceId,
+          version: 1,
+          name: `${source.name} (copy)`,
+          enabled: false,
+        });
+
+        await tx.insert(schema.automationVersions).values({
+          workspaceId: workspace.workspaceId,
+          automationId: clone!.id,
+          version: 1,
+          definition,
+          createdBy: userId,
+        });
+
+        return clone!.id;
+      });
+      if (!created) throw ApiError.hidden('Automation');
+
+      await context.auth.audit(
+        workspace.workspaceId,
+        userId,
+        'automation.cloned',
+        requestContext(request),
+        { sourceId: id, automationId: created },
+      );
+
+      return reply.status(201).send({ id: created, message: 'Cloned as a disabled draft.' });
     },
   );
 

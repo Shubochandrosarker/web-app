@@ -55,11 +55,19 @@ interface AutomationDetail {
   readonly definition: {
     name: string;
     description?: string;
-    trigger: { kind: string; event?: string };
+    trigger: { kind: string; event?: string; cron?: string };
     condition?: ApiCondition;
     steps: ApiStep[];
     reentry: 'once_per_contact' | 'once_per_entity' | 'always';
   } | null;
+  readonly versions: readonly { version: number; createdAt: string }[];
+  readonly metrics: {
+    readonly total: number;
+    readonly completed: number;
+    readonly failed: number;
+    readonly active: number;
+    readonly lastRunAt: string | null;
+  };
 }
 
 interface RunRow {
@@ -157,7 +165,9 @@ export default async function AutomationDetailPage({
   let initial: BuilderDefinition = {
     name: '',
     description: '',
+    triggerKind: 'event',
     triggerEvent: 'lead.created',
+    triggerCron: '0 9 * * 1',
     condition: null,
     steps: [],
     reentry: 'once_per_entity',
@@ -176,7 +186,9 @@ export default async function AutomationDetailPage({
       initial = {
         name: detail.definition.name,
         description: detail.definition.description ?? '',
+        triggerKind: detail.definition.trigger.kind === 'schedule' ? 'schedule' : 'event',
         triggerEvent: detail.definition.trigger.event ?? 'lead.created',
+        triggerCron: detail.definition.trigger.cron ?? '0 9 * * 1',
         condition: detail.definition.condition
           ? toBuilderCondition(detail.definition.condition)
           : null,
@@ -248,6 +260,28 @@ export default async function AutomationDetailPage({
         pickers={pickers}
         canWrite={canWrite}
       />
+
+      {!isNew && detail ? (
+        <section className="panel" aria-labelledby="metrics-heading">
+          <h2 id="metrics-heading">Health</h2>
+          <p>
+            {detail.metrics.total} run{detail.metrics.total === 1 ? '' : 's'} ·{' '}
+            {detail.metrics.completed} completed · {detail.metrics.active} in progress ·{' '}
+            {detail.metrics.failed > 0 ? (
+              <span className="badge badge--lost">{detail.metrics.failed} failed</span>
+            ) : (
+              '0 failed'
+            )}
+          </p>
+          <p className="muted">
+            {detail.versions.length} saved version{detail.versions.length === 1 ? '' : 's'} — every
+            save is a version, and a run always finishes on the version it started with.
+            {detail.versions.length > 1
+              ? ` Latest: v${detail.versions[0]?.version}, first: v${detail.versions[detail.versions.length - 1]?.version}.`
+              : ''}
+          </p>
+        </section>
+      ) : null}
 
       {!isNew ? (
         <section className="panel" aria-labelledby="runs-heading">

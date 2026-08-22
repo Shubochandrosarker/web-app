@@ -7,22 +7,20 @@ Redis services used by CI.
 
 ## Totals
 
-| Suite                                     | Tests                 | Result            |
-| ----------------------------------------- | --------------------- | ----------------- |
-| `@bos/api` (integration, real DB + Redis) | CI-owned count        | Requires services |
-| `@bos/sanitize`                           | 20                    | ✅                |
-| `@bos/content` (WordPress adapter)        | 6                     | ✅                |
-| `@bos/database` (RLS isolation)           | 5                     | ✅                |
-| `@bos/business-types` (tenant configs)    | 3                     | ✅                |
-| Playwright e2e (desktop + mobile)         | 10                    | ✅                |
-| **Total**                                 | **Not asserted here** | See CI run        |
+| Suite                                     | Tests   | Result |
+| ----------------------------------------- | ------- | ------ |
+| `@bos/api` (integration, real DB + Redis) | 172     | ✅     |
+| `@bos/sanitize`                           | 20      | ✅     |
+| `@bos/content` (WordPress adapter)        | 6       | ✅     |
+| `@bos/database` (RLS isolation)           | 5       | ✅     |
+| `@bos/business-types` (configs + release) | 18      | ✅     |
+| `@bos/automation` (cron matcher)          | 4       | ✅     |
+| Playwright e2e (desktop + mobile)         | 10      | ✅     |
+| **Total**                                 | **235** | ✅     |
 
-The closeout branch has passed targeted typechecks for API, dashboard,
-database and business-types after the module changes. Formatting is enforced on
-changed files; the deliberate full-tree audit remains available as
-`pnpm format:check:all` and currently reports historical files outside this
-closeout as not Prettier-clean. Touched files are formatted and `git diff
---check` is clean.
+The closeout branch typechecks across all fourteen workspaces, and the whole
+repository is Prettier-clean: `pnpm format:check` audits the full tree in CI
+again (`format:check:changed` remains for fast local checks).
 
 ## What the API suite actually proves (by area)
 

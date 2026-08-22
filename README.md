@@ -29,17 +29,19 @@ packages/
 ├── content/       ContentProvider interface + internal / wordpress / markdown
 ├── seo/           Metadata, JSON-LD graph, sitemaps, IndexNow
 ├── automation/    Trigger / condition / action definition language
-├── events/        The 38-event canonical catalogue
+├── events/        The 44-event canonical catalogue
 ├── validation/    Shared Zod primitives and attribution shapes
 └── config/        Environment schemas, validated at boot
 
 configs/
-└── nuesheba/      The first tenant — brand, NAP, locale, modules
+├── nuesheba/          The production tenant (environment.releaseEligible: true)
+├── demo-consultancy/  Fictional fixture proving portability — never released
+└── demo-tours/        Fictional tour operator exercising the operations stack
 
 docs/
 ├── architecture/  The V1 blueprint (10 documents)
 ├── database/      Schema conventions, migrations, RLS verification
-└── tasks/         30 implementation tasks across 8 phases
+└── tasks/         The implementation task board across 8 phases
 ```
 
 ## Getting started
@@ -93,7 +95,7 @@ See [the database README](docs/database/README.md).
 | `pnpm db:migrate`           | Apply migrations, RLS and grants                       |
 | `pnpm workspace:provision`  | Create or refresh a tenant from `configs/<slug>/`      |
 | `pnpm workspace:seed-smoke` | Fixture pages for local dev and CI. Never production   |
-| `pnpm check:readiness`      | Fail if a tenant config still carries placeholder data |
+| `pnpm check:readiness`      | Fail if a release-eligible config carries placeholders |
 | `pnpm smoke`                | Smoke-test a deployment. Non-zero means do not ship    |
 | `pnpm redirects:import`     | Import a URL migration map                             |
 | `pnpm redirects:verify`     | Check the deployed site honours it, in one hop         |
@@ -115,7 +117,7 @@ sign in → dashboard → lead → move it along the pipeline → note, task, fo
 
 |                  |                                                                             |
 | ---------------- | --------------------------------------------------------------------------- |
-| Schema           | 58 tables, 19 enums, RLS on every tenant-scoped table, `FORCE`d             |
+| Schema           | 63 tables, 21 enums, RLS on every tenant-scoped table, `FORCE`d             |
 | Tenant isolation | Verified against a real database, as the least-privilege application role   |
 | Authentication   | Argon2id, opaque tokens, refresh rotation with reuse detection, TOTP MFA    |
 | Authorisation    | Every route declares a permission; the boot fails if one does not           |
@@ -124,12 +126,29 @@ sign in → dashboard → lead → move it along the pipeline → note, task, fo
 | Tests            | Unit and integration suites, with real Postgres/Redis integration in CI     |
 | Docs             | 10 architecture documents, 17 ADRs, deployment and go-live runbooks         |
 
-The current closeout branch also includes the Services, Appointments, Reviews,
-Local SEO and Landing Pages management screens. Orders remain deliberately
-blocked until their schema, migration and payment/fulfilment contract are
-implemented. The remaining owner-gated launch facts are listed in
+On top of that slice: media library, form builder, private documents with
+malware-scan gating, email/WhatsApp channels, the durable automation engine
+and builder (event **and cron-schedule** triggers, clone, health metrics, a
+failed-run queue, an hourly send ceiling), analytics with Search Console
+ingestion, attribution models and verified-payment revenue, the SEO audit
+with AEO/GEO checks and AI suggestions, the Services / Appointments (with a
+real availability, capacity and conflict engine plus reminders) / **Orders
+with manual payments** / Reviews / Local SEO / Landing Pages management
+screens, global search, a notifications centre, team operations with
+invitations and the last-owner guard, and a readable audit log. The
+remaining owner-gated launch facts are listed in
 [`docs/owner-input-required.md`](docs/owner-input-required.md) and
 [the go-live checklist](docs/deployment/go-live.md).
+
+### Release posture
+
+`environment.releaseEligible` in each tenant config decides who can be the
+subject of a release: fixtures are reported informationally and can never
+gate — or be — a release, and the Release Gate workflow names the production
+tenant explicitly, so a real tenant cannot be silently skipped. The principle
+throughout: **no invented business facts, ever** — where a fact is missing
+the platform renders nothing, blocks publishing (`[OWNER: …]` markers refuse
+to publish), and records the gap in `docs/owner-input-required.md`.
 
 ## Deploying
 

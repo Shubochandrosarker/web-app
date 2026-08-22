@@ -14,7 +14,7 @@ import { describe, it } from 'node:test';
 import {
   checkProductionReadiness,
   resolveWorkspaceConfig,
-  selectReadinessTenants,
+  selectReleaseTargets,
   workspaceConfigSchema,
 } from '../src/index.ts';
 
@@ -37,17 +37,25 @@ describe('tenant configs', () => {
       }),
     );
 
-    assert.deepEqual(selectReadinessTenants(configs, undefined, true), ['nuesheba']);
-    assert.deepEqual(selectReadinessTenants(configs, 'demo-consultancy', false), [
-      'demo-consultancy',
-    ]);
+    const platformRelease = selectReleaseTargets(configs, [], true);
+    assert.deepEqual(platformRelease.targets, ['nuesheba']);
+    assert.deepEqual(platformRelease.errors, []);
+
+    // Naming a fixture is release intent for a tenant that must never be
+    // released — a loud failure, not an override.
+    const fixtureNamed = selectReleaseTargets(configs, ['demo-consultancy'], false);
+    assert.deepEqual(fixtureNamed.targets, []);
+    assert.match(fixtureNamed.errors[0] ?? '', /not marked environment.releaseEligible/);
   });
 
   it('rejects an unknown explicit tenant instead of silently checking another one', () => {
-    assert.throws(
-      () => selectReadinessTenants([{ slug: 'nuesheba', releaseEligible: true }], 'missing', false),
-      /Unknown tenant "missing"/,
+    const selection = selectReleaseTargets(
+      [{ slug: 'nuesheba', releaseEligible: true }],
+      ['missing'],
+      false,
     );
+    assert.deepEqual(selection.targets, []);
+    assert.match(selection.errors[0] ?? '', /Unknown tenant "missing"/);
   });
 
   it('keeps placeholder production facts blocked', async () => {
@@ -75,6 +83,9 @@ describe('tenant configs', () => {
       legal: {
         independenceDisclaimer:
           'NuESheba is an independent service provider and is not affiliated with National University.',
+        // documentUpload is enabled, so a published data-handling policy is
+        // part of "verified facts" — the readiness policy blocks without it.
+        privacyPolicyPath: '/privacy',
       },
     };
     const report = checkProductionReadiness(resolveWorkspaceConfig(verified));

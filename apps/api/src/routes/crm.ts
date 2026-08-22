@@ -166,88 +166,89 @@ export function registerCrmRoutes(app: FastifyInstance, context: AppContext): vo
 
         if (!row) throw ApiError.hidden('Lead');
 
-        const [activities, notes, tasks, submission, documents] = await Promise.all([
-          tx
-            .select({
-              id: schema.activities.id,
-              type: schema.activities.type,
-              summary: schema.activities.summary,
-              occurredAt: schema.activities.occurredAt,
-              actorUserId: schema.activities.actorUserId,
-            })
-            .from(schema.activities)
-            .where(eq(schema.activities.leadId, id))
-            .orderBy(desc(schema.activities.occurredAt))
-            .limit(100),
+        // Sequential: these share one transaction client, and a single pg
+        // connection cannot execute queries concurrently — Promise.all here
+        // leans on command queueing node-postgres deprecates (gone in pg 9).
+        const activities = await tx
+          .select({
+            id: schema.activities.id,
+            type: schema.activities.type,
+            summary: schema.activities.summary,
+            occurredAt: schema.activities.occurredAt,
+            actorUserId: schema.activities.actorUserId,
+          })
+          .from(schema.activities)
+          .where(eq(schema.activities.leadId, id))
+          .orderBy(desc(schema.activities.occurredAt))
+          .limit(100);
 
-          tx
-            .select({
-              id: schema.notes.id,
-              body: schema.notes.body,
-              authorId: schema.notes.authorId,
-              createdAt: schema.notes.createdAt,
-            })
-            .from(schema.notes)
-            .where(
-              and(
-                eq(schema.notes.entityType, 'lead'),
-                eq(schema.notes.entityId, id),
-                isNull(schema.notes.deletedAt),
-              ),
-            )
-            .orderBy(desc(schema.notes.createdAt))
-            .limit(100),
+        const notes = await tx
+          .select({
+            id: schema.notes.id,
+            body: schema.notes.body,
+            authorId: schema.notes.authorId,
+            createdAt: schema.notes.createdAt,
+          })
+          .from(schema.notes)
+          .where(
+            and(
+              eq(schema.notes.entityType, 'lead'),
+              eq(schema.notes.entityId, id),
+              isNull(schema.notes.deletedAt),
+            ),
+          )
+          .orderBy(desc(schema.notes.createdAt))
+          .limit(100);
 
-          tx
-            .select({
-              id: schema.tasks.id,
-              title: schema.tasks.title,
-              status: schema.tasks.status,
-              dueAt: schema.tasks.dueAt,
-              assignedToUserId: schema.tasks.assignedToUserId,
-            })
-            .from(schema.tasks)
-            .where(
-              and(
-                eq(schema.tasks.entityType, 'lead'),
-                eq(schema.tasks.entityId, id),
-                isNull(schema.tasks.deletedAt),
-              ),
-            )
-            .orderBy(asc(schema.tasks.dueAt))
-            .limit(50),
+        const tasks = await tx
+          .select({
+            id: schema.tasks.id,
+            title: schema.tasks.title,
+            status: schema.tasks.status,
+            dueAt: schema.tasks.dueAt,
+            assignedToUserId: schema.tasks.assignedToUserId,
+          })
+          .from(schema.tasks)
+          .where(
+            and(
+              eq(schema.tasks.entityType, 'lead'),
+              eq(schema.tasks.entityId, id),
+              isNull(schema.tasks.deletedAt),
+            ),
+          )
+          .orderBy(asc(schema.tasks.dueAt))
+          .limit(50);
 
-          mayReadSubmissions
-            ? tx
-                .select({
-                  id: schema.formSubmissions.id,
-                  payload: schema.formSubmissions.payload,
-                  createdAt: schema.formSubmissions.createdAt,
-                })
-                .from(schema.formSubmissions)
-                .where(eq(schema.formSubmissions.leadId, id))
-                .limit(1)
-            : Promise.resolve([]),
+        const submission = mayReadSubmissions
+          ? await tx
+              .select({
+                id: schema.formSubmissions.id,
+                payload: schema.formSubmissions.payload,
+                createdAt: schema.formSubmissions.createdAt,
+              })
+              .from(schema.formSubmissions)
+              .where(eq(schema.formSubmissions.leadId, id))
+              .limit(1)
+          : [];
 
-          mayReadDocuments
-            ? tx
-                .select({
-                  id: schema.documents.id,
-                  kind: schema.documents.kind,
-                  // `objectKey` is deliberately absent. Nothing outside the
-                  // download endpoint ever needs it, and a key in a JSON
-                  // response is a key in a browser's history.
-                  originalFilename: schema.documents.originalFilename,
-                  mimeType: schema.documents.mimeType,
-                  sizeBytes: schema.documents.sizeBytes,
-                  status: schema.documents.status,
-                  createdAt: schema.documents.createdAt,
-                })
-                .from(schema.documents)
-                .where(and(eq(schema.documents.leadId, id), isNull(schema.documents.deletedAt)))
-                .limit(20)
-            : Promise.resolve([]),
-        ]);
+        const documents = mayReadDocuments
+          ? await tx
+              .select({
+                id: schema.documents.id,
+                kind: schema.documents.kind,
+                // `objectKey` is deliberately absent. Nothing outside the
+                // download endpoint ever needs it, and a key in a JSON
+                // response is a key in a browser's history.
+                originalFilename: schema.documents.originalFilename,
+                mimeType: schema.documents.mimeType,
+                sizeBytes: schema.documents.sizeBytes,
+                status: schema.documents.status,
+                createdAt: schema.documents.createdAt,
+              })
+              .from(schema.documents)
+              .where(and(eq(schema.documents.leadId, id), isNull(schema.documents.deletedAt)))
+              .limit(20)
+          : [];
 
         return {
           lead: {
@@ -552,31 +553,31 @@ export function registerCrmRoutes(app: FastifyInstance, context: AppContext): vo
 
         if (!contact) throw ApiError.hidden('Contact');
 
-        const [leads, activities] = await Promise.all([
-          tx
-            .select({
-              id: schema.leads.id,
-              title: schema.leads.title,
-              status: schema.leads.status,
-              createdAt: schema.leads.createdAt,
-            })
-            .from(schema.leads)
-            .where(and(eq(schema.leads.contactId, id), isNull(schema.leads.deletedAt)))
-            .orderBy(desc(schema.leads.createdAt))
-            .limit(50),
+        // Sequential for the same reason as the lead detail: one transaction
+        // client, no concurrent queries (pg deprecates the implicit queue).
+        const leads = await tx
+          .select({
+            id: schema.leads.id,
+            title: schema.leads.title,
+            status: schema.leads.status,
+            createdAt: schema.leads.createdAt,
+          })
+          .from(schema.leads)
+          .where(and(eq(schema.leads.contactId, id), isNull(schema.leads.deletedAt)))
+          .orderBy(desc(schema.leads.createdAt))
+          .limit(50);
 
-          tx
-            .select({
-              id: schema.activities.id,
-              type: schema.activities.type,
-              summary: schema.activities.summary,
-              occurredAt: schema.activities.occurredAt,
-            })
-            .from(schema.activities)
-            .where(eq(schema.activities.contactId, id))
-            .orderBy(desc(schema.activities.occurredAt))
-            .limit(100),
-        ]);
+        const activities = await tx
+          .select({
+            id: schema.activities.id,
+            type: schema.activities.type,
+            summary: schema.activities.summary,
+            occurredAt: schema.activities.occurredAt,
+          })
+          .from(schema.activities)
+          .where(eq(schema.activities.contactId, id))
+          .orderBy(desc(schema.activities.occurredAt))
+          .limit(100);
 
         return {
           contact: {

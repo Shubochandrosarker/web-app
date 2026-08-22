@@ -33,6 +33,16 @@ export interface DispatcherOptions {
    * and a second polling loop would double the idle query load for nothing.
    */
   readonly resumeAutomations?: () => Promise<number>;
+  /**
+   * Turns due appointment-reminder rows into outbox events, under the same
+   * lease and for the same reason as `resumeAutomations`.
+   */
+  readonly dispatchReminders?: () => Promise<number>;
+  /**
+   * Enrolls schedule-triggered automations whose cron matches the current
+   * minute. Idempotent per minute, so the five-second cadence is harmless.
+   */
+  readonly runSchedules?: () => Promise<number>;
   /** How often to look for work. */
   readonly intervalMs?: number;
   readonly batchSize?: number;
@@ -78,6 +88,22 @@ export function createDispatcher(options: DispatcherOptions): Dispatcher {
           return 0;
         });
         if (resumed > 0) options.logger.info({ resumed }, 'Automation runs resumed');
+      }
+
+      if (options.dispatchReminders) {
+        const reminders = await options.dispatchReminders().catch((error: unknown) => {
+          options.logger.error({ err: error }, 'Reminder dispatch pass failed');
+          return 0;
+        });
+        if (reminders > 0) options.logger.info({ reminders }, 'Appointment reminders dispatched');
+      }
+
+      if (options.runSchedules) {
+        const matched = await options.runSchedules().catch((error: unknown) => {
+          options.logger.error({ err: error }, 'Schedule sweep failed');
+          return 0;
+        });
+        if (matched > 0) options.logger.info({ matched }, 'Scheduled automations matched');
       }
 
       if (result.claimed > 0) {

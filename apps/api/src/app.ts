@@ -4,6 +4,7 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
+import rateLimit from '@fastify/rate-limit';
 import { createDatabase, type Database } from '@bos/database';
 import { MODULE_REGISTRY, type ModuleId } from '@bos/business-types';
 import type { ApiConfig } from './lib/env.ts';
@@ -31,12 +32,17 @@ import { registerDocumentRoutes } from './routes/documents.ts';
 import { registerServicesRoutes } from './routes/services.ts';
 import { registerLocationRoutes } from './routes/locations.ts';
 import { registerAppointmentRoutes } from './routes/appointments.ts';
+import { registerOrderRoutes } from './routes/orders.ts';
 import { registerReviewRoutes } from './routes/reviews.ts';
 import {
   buildAutomationEngine,
   createOutboxHandler,
   registerInternalRoutes,
 } from './routes/internal.ts';
+import { registerAuditRoutes, registerSettingsRoutes } from './routes/settings.ts';
+import { registerSearchRoutes } from './routes/search.ts';
+import { registerNotificationRoutes } from './routes/notifications.ts';
+import { registerMemberRoutes } from './routes/members.ts';
 import {
   createEmailProvider,
   createWhatsappProvider,
@@ -45,6 +51,7 @@ import {
 import { createScanner, type DocumentScanner } from './providers/scanner.ts';
 import { createStorage } from './providers/storage.ts';
 import { createDispatcher, type Dispatcher } from './services/dispatcher.ts';
+import { dispatchDueReminders } from './services/scheduling.ts';
 import { createLeadService } from './services/leads.ts';
 import { createNotificationDispatcher } from './services/notifications.ts';
 
@@ -233,6 +240,15 @@ export function buildApp({
     maxAge: 86_400,
   });
 
+  /*
+   * Per-route only (`global: false`): the hot read paths must not pay a
+   * limiter, and the app-level Redis limiters (login, forms, invitations)
+   * stay the durable cross-instance enforcement. This layer is the
+   * framework-level backstop that routes performing expensive mutations
+   * opt into via `config.rateLimit`.
+   */
+  void app.register(rateLimit, { global: false });
+
   void app.register(cookie, { secret: config.AUTH_SESSION_SECRET });
 
   void app.register(multipart, {
@@ -343,6 +359,7 @@ export function buildApp({
 
   /* ------------------------------------------------------------- modules */
 
+  const { sendAuthEmail } = createNotificationDispatcher({ config, email, whatsapp, db });
   registerAuthRoutes(app, {
     auth,
     redis,
@@ -350,7 +367,7 @@ export function buildApp({
     isProduction: config.NODE_ENV === 'production',
     accessTokenTtl: config.AUTH_ACCESS_TOKEN_TTL,
     refreshTokenTtl: config.AUTH_REFRESH_TOKEN_TTL,
-    sendAuthEmail: createNotificationDispatcher({ config, email, whatsapp, db }).sendAuthEmail,
+    sendAuthEmail,
   });
 
   const MODULE_ROUTES: Partial<Record<ModuleId, ModuleRegistrar>> = {
@@ -378,6 +395,7 @@ export function buildApp({
     'ops.documents': (instance, ctx) => registerDocumentRoutes(instance, ctx),
     'ops.services': (instance, ctx) => registerServicesRoutes(instance, ctx),
     'ops.scheduling': (instance, ctx) => registerAppointmentRoutes(instance, ctx),
+    'ops.orders': (instance, ctx) => registerOrderRoutes(instance, ctx),
     'reputation.local_seo': (instance, ctx) => registerLocationRoutes(instance, ctx),
     'reputation.reviews': (instance, ctx) => registerReviewRoutes(instance, ctx),
     'analytics.traffic': (instance, ctx) => registerAnalyticsRoutes(instance, ctx),
@@ -402,6 +420,14 @@ export function buildApp({
   const internalDependencies = { email, whatsapp, logger: app.log };
   registerInternalRoutes(app, context, internalDependencies);
 
+  // Settings, search, notifications, team and the audit trail are likewise
+  // core, not modules: every workspace has them whatever it has enabled.
+  registerSettingsRoutes(app, context);
+  registerAuditRoutes(app, context);
+  registerSearchRoutes(app, context);
+  registerNotificationRoutes(app, context);
+  registerMemberRoutes(app, context, { sendAuthEmail });
+
   // The WhatsApp webhook is infrastructure, like the internal routes: Meta
   // must be able to reach it whether or not any module is mounted.
   registerWhatsappWebhookRoutes(app, context);
@@ -418,6 +444,8 @@ export function buildApp({
     logger: app.log,
     handler: createOutboxHandler(context, internalDependencies, automationEngine),
     resumeAutomations: () => automationEngine.resumeDueRuns(),
+    dispatchReminders: () => dispatchDueReminders(db),
+    runSchedules: () => automationEngine.runDueSchedules(),
   });
 
   for (const warning of warnings) app.log.warn({ warning }, 'Configuration warning');

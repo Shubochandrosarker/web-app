@@ -258,3 +258,35 @@ describe('search console', () => {
     assert.equal(body.rows[0]?.position, 6.4);
   });
 });
+
+describe('attribution and revenue', () => {
+  it('reports attribution under both models and revenue from verified payments', async () => {
+    const attribution = await harness.app.inject({
+      method: 'GET',
+      url: '/v1/analytics/attribution?model=first_touch&days=30',
+      headers,
+    });
+    assert.equal(attribution.statusCode, 200, attribution.body);
+    assert.equal((attribution.json() as { model: string }).model, 'first_touch');
+
+    const lastTouch = await harness.app.inject({
+      method: 'GET',
+      url: '/v1/analytics/attribution?days=30',
+      headers,
+    });
+    assert.equal((lastTouch.json() as { model: string }).model, 'last_touch', 'default model');
+
+    const revenue = await harness.app.inject({
+      method: 'GET',
+      url: '/v1/analytics/revenue?days=30',
+      headers,
+    });
+    assert.equal(revenue.statusCode, 200, revenue.body);
+    const body = revenue.json() as {
+      totals: unknown[];
+      orders: { completed: number; total: number };
+    };
+    assert.ok(Array.isArray(body.totals));
+    assert.ok(body.orders.total >= 0);
+  });
+});

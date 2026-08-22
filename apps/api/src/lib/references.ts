@@ -77,14 +77,16 @@ export async function resolveSectionReferences(
 
   if (!needsAnything) return EMPTY_REFERENCES;
 
-  const [services, people, locations, reviews, related, media] = await Promise.all([
-    resolveServices(tx, workspaceId, request, options),
-    resolvePeople(tx, workspaceId, request, options),
-    resolveLocations(tx, workspaceId, request),
-    request.wantsReviews ? resolveReviews(tx, workspaceId) : Promise.resolve([]),
-    resolveRelated(tx, request, options),
-    resolveMedia(tx, request, options),
-  ]);
+  // Sequential: all six share one transaction client, and a single pg
+  // connection cannot run queries concurrently — Promise.all here leans on
+  // command queueing that node-postgres deprecates (removed in pg 9), so the
+  // "parallelism" was never real.
+  const services = await resolveServices(tx, workspaceId, request, options);
+  const people = await resolvePeople(tx, workspaceId, request, options);
+  const locations = await resolveLocations(tx, workspaceId, request);
+  const reviews = request.wantsReviews ? await resolveReviews(tx, workspaceId) : [];
+  const related = await resolveRelated(tx, request, options);
+  const media = await resolveMedia(tx, request, options);
 
   /*
    * Forms resolve last, because a select can draw its options from the service

@@ -18,6 +18,9 @@ const JOBS = [
   'outbox.dispatch',
   // Same backstop for automation runs sleeping past every instance's loop.
   'automations.resume',
+  // Schedule-triggered automations; idempotent per minute, so overlap with
+  // the in-process sweep is harmless.
+  'automations.schedule',
   'analytics.rollup',
   // Search Console lags ~2 days; the nightly pull re-ingests a trailing
   // window and upserts, so late data corrects itself.

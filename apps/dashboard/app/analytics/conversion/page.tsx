@@ -19,6 +19,16 @@ interface Conversions {
   readonly byLandingPath: readonly { path: string; conversions: number }[];
 }
 
+interface Attribution {
+  readonly model: 'first_touch' | 'last_touch';
+  readonly rows: readonly { channel: string; sourceKey: string | null; leads: number }[];
+}
+
+interface Revenue {
+  readonly totals: readonly { currency: string; amount: number; payments: number }[];
+  readonly orders: { completed: number; total: number };
+}
+
 const STATUS_LABELS: Record<string, string> = {
   open: 'Open',
   won: 'Won',
@@ -29,16 +39,21 @@ const STATUS_LABELS: Record<string, string> = {
 export default async function ConversionAnalyticsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ days?: string }>;
+  searchParams: Promise<{ days?: string; model?: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect('/sign-in');
   const params = await searchParams;
   const days = pickDays(params.days);
+  const model = params.model === 'first_touch' ? 'first_touch' : 'last_touch';
 
   const data = await apiFetch<Conversions>(`/v1/analytics/conversions?days=${days}`).catch(
     () => null,
   );
+  const attribution = await apiFetch<Attribution>(
+    `/v1/analytics/attribution?days=${days}&model=${model}`,
+  ).catch(() => null);
+  const revenue = await apiFetch<Revenue>(`/v1/analytics/revenue?days=${days}`).catch(() => null);
 
   const total = data?.funnel.reduce((sum, row) => sum + row.count, 0) ?? 0;
   const won = data?.funnel.find((row) => row.status === 'won');
@@ -151,6 +166,80 @@ export default async function ConversionAnalyticsPage({
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section className="panel">
+            <h2>Attribution</h2>
+            <p className="muted">
+              Which channel gets the credit for each enquiry, under the model you choose — first
+              touch credits discovery, last touch credits conversion. Both are honest; they answer
+              different questions.
+            </p>
+            <p>
+              <a
+                className={`button${model === 'last_touch' ? ' button--primary' : ''}`}
+                href={`/analytics/conversion?days=${days}&model=last_touch`}
+              >
+                Last touch
+              </a>{' '}
+              <a
+                className={`button${model === 'first_touch' ? ' button--primary' : ''}`}
+                href={`/analytics/conversion?days=${days}&model=first_touch`}
+              >
+                First touch
+              </a>
+            </p>
+            {!attribution || attribution.rows.length === 0 ? (
+              <p className="muted">No attributed enquiries in this window.</p>
+            ) : (
+              <div className="table-scroll">
+                <table className="data-table">
+                  <caption className="visually-hidden">Attribution by channel</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Channel</th>
+                      <th scope="col">Source</th>
+                      <th scope="col">Enquiries credited</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {attribution.rows.map((row) => (
+                      <tr key={`${row.channel}:${row.sourceKey ?? ''}`}>
+                        <td>{row.channel.replace('_', ' ')}</td>
+                        <td>{row.sourceKey ?? '—'}</td>
+                        <td>{row.leads}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="panel">
+            <h2>Revenue</h2>
+            <p className="muted">
+              Verified payments from the orders module — the number the bank statement agrees with,
+              not a projection.
+            </p>
+            {!revenue || revenue.totals.length === 0 ? (
+              <p className="muted">
+                No verified payments in this window. Payments recorded on orders appear here.
+              </p>
+            ) : (
+              <>
+                <div className="stat-grid">
+                  {revenue.totals.map((row) => (
+                    <StatCard
+                      key={row.currency}
+                      label={`Revenue (${row.currency}, minor units)`}
+                      value={row.amount}
+                    />
+                  ))}
+                  <StatCard label="Orders completed" value={revenue.orders.completed} />
+                </div>
+              </>
+            )}
           </section>
 
           <section className="panel">

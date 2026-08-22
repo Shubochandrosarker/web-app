@@ -34,6 +34,7 @@ export const EVENT_NAMES = [
   'form.submitted',
   'document.uploaded',
   'document.verified',
+  'document.rejected',
 
   // Scheduling
   'appointment.created',
@@ -54,6 +55,10 @@ export const EVENT_NAMES = [
   'whatsapp.replied',
 
   // Commerce
+  'order.created',
+  'order.status_changed',
+  'order.completed',
+  'order.cancelled',
   'payment.completed',
   'payment.failed',
   'payment.refunded',
@@ -67,6 +72,8 @@ export const EVENT_NAMES = [
 
   // Reputation
   'review.received',
+  /** A review invitation went out (or is due) for a completed engagement. */
+  'review.requested',
 
   // Integration surface
   'webhook.received',
@@ -124,6 +131,19 @@ export const eventPayloadSchemas = {
     serviceId: uuid.optional(),
     staffUserId: uuid.optional(),
     startsAt: z.iso.datetime({ offset: true }),
+  }),
+  'order.created': z.object({
+    orderId: uuid,
+    orderNumber: z.string().max(30),
+    contactId: uuid,
+    totalAmount: z.number().int().nonnegative(),
+    currency: z.string().length(3),
+  }),
+  'order.status_changed': z.object({
+    orderId: uuid,
+    orderNumber: z.string().max(30),
+    fromStatus: z.string().max(30),
+    toStatus: z.string().max(30),
   }),
   'content.published': z.object({
     contentEntryId: uuid,

@@ -22,9 +22,18 @@ export interface AuditFinding {
   readonly detail: string;
 }
 
+/**
+ * `technical` keeps crawlers working, `content` keeps visitors reading,
+ * `answers` is AEO/GEO — whether a page gives answer engines and generative
+ * assistants something they can quote. All three are deterministic checks
+ * over real page data; none produces a composite score.
+ */
+export type AuditCategory = 'technical' | 'content' | 'answers';
+
 export interface AuditCheck {
   readonly id: string;
   readonly severity: AuditSeverity;
+  readonly category: AuditCategory;
   readonly label: string;
   /** Why this matters — shown to a non-specialist owner. */
   readonly explanation: string;
@@ -61,11 +70,15 @@ function walkDocument(document: unknown): {
   textLength: number;
   imagesMissingAlt: number;
   hasFaq: boolean;
+  faqCount: number;
+  firstSectionTextLength: number;
 } {
   const internalLinks: string[] = [];
   let textLength = 0;
   let imagesMissingAlt = 0;
   let hasFaq = false;
+  let faqCount = 0;
+  let firstSectionTextLength = -1;
 
   const sections = Array.isArray((document as { sections?: unknown[] })?.sections)
     ? ((document as { sections: unknown[] }).sections as {
@@ -106,11 +119,26 @@ function walkDocument(document: unknown): {
 
   for (const section of sections) {
     if (section.hidden) continue;
-    if (section.type === 'faq') hasFaq = true;
+    if (section.type === 'faq') {
+      hasFaq = true;
+      const items = (section.props as { items?: unknown[] } | undefined)?.items;
+      faqCount += Array.isArray(items) ? items.length : 0;
+    }
+    const before = textLength;
     visit(section.props ?? {}, null);
+    // The first visible section's own text: what a reader (or an answer
+    // engine) gets before scrolling. Hero/heading sections count.
+    if (firstSectionTextLength < 0) firstSectionTextLength = textLength - before;
   }
 
-  return { internalLinks, textLength, imagesMissingAlt, hasFaq };
+  return {
+    internalLinks,
+    textLength,
+    imagesMissingAlt,
+    hasFaq,
+    faqCount,
+    firstSectionTextLength: Math.max(0, firstSectionTextLength),
+  };
 }
 
 export async function runSeoAudit(db: Database, workspaceId: string): Promise<SeoAudit> {
@@ -172,11 +200,12 @@ export async function runSeoAudit(db: Database, workspaceId: string): Promise<Se
   const add = (
     id: string,
     severity: AuditSeverity,
+    category: AuditCategory,
     label: string,
     explanation: string,
     findings: AuditFinding[],
   ): void => {
-    if (findings.length > 0) checks.push({ id, severity, label, explanation, findings });
+    if (findings.length > 0) checks.push({ id, severity, category, label, explanation, findings });
   };
 
   /* --------------------------------------------------------- structural */
@@ -184,6 +213,7 @@ export async function runSeoAudit(db: Database, workspaceId: string): Promise<Se
   add(
     'missing-home',
     'critical',
+    'technical',
     'No published home page',
     'Visitors and crawlers landing on the root get a 404 — nothing else matters until this exists.',
     knownPaths.has('/')
@@ -194,6 +224,7 @@ export async function runSeoAudit(db: Database, workspaceId: string): Promise<Se
   add(
     'broken-internal-links',
     'critical',
+    'technical',
     'Internal links to pages that do not exist',
     'A broken link loses the visitor and wastes crawl budget; these are links on your own pages.',
     pages.flatMap((page) =>
@@ -211,6 +242,7 @@ export async function runSeoAudit(db: Database, workspaceId: string): Promise<Se
   add(
     'orphan-pages',
     'warning',
+    'technical',
     'Pages nothing links to',
     'A page no other page links to is hard for visitors to find and weak in search — link it from a relevant page or the navigation.',
     pages
@@ -226,6 +258,7 @@ export async function runSeoAudit(db: Database, workspaceId: string): Promise<Se
   add(
     'missing-description',
     'warning',
+    'content',
     'Pages without a meta description',
     'Search engines write their own snippet when none is set — usually worse than yours would be.',
     pages
@@ -236,6 +269,7 @@ export async function runSeoAudit(db: Database, workspaceId: string): Promise<Se
   add(
     'title-length',
     'notice',
+    'content',
     'Titles outside 15–60 characters',
     'Long titles truncate in results; very short ones waste the space that earns the click.',
     pages
@@ -256,6 +290,7 @@ export async function runSeoAudit(db: Database, workspaceId: string): Promise<Se
   add(
     'duplicate-titles',
     'warning',
+    'content',
     'Pages competing for the same title',
     'Two pages with the same title compete against each other in search (cannibalisation) — differentiate them or merge them.',
     [...titleCounts.values()]
@@ -272,6 +307,7 @@ export async function runSeoAudit(db: Database, workspaceId: string): Promise<Se
   add(
     'noindex-published',
     'notice',
+    'technical',
     'Published pages marked noindex',
     'Deliberate sometimes — but a noindex page earns no search traffic, so each one should be intentional.',
     pages
@@ -284,6 +320,7 @@ export async function runSeoAudit(db: Database, workspaceId: string): Promise<Se
   add(
     'thin-content',
     'warning',
+    'content',
     'Pages with very little text',
     'Under ~300 characters there is little for search engines — or people — to work with.',
     pages
@@ -298,6 +335,7 @@ export async function runSeoAudit(db: Database, workspaceId: string): Promise<Se
   add(
     'images-missing-alt',
     'warning',
+    'content',
     'Images without alt text',
     'Alt text is accessibility first and image search second; empty alts fail both.',
     pages
@@ -314,11 +352,49 @@ export async function runSeoAudit(db: Database, workspaceId: string): Promise<Se
   add(
     'services-without-faq',
     'notice',
+    'answers',
     'Service pages without a FAQ section',
     'Answer-first content wins featured snippets and AI-assistant citations; a FAQ section also emits FAQPage structured data automatically.',
     pages
       .filter((page) => page.type === 'service' && !walked.get(page.id)?.hasFaq)
       .map((page) => ({ path: page.path, title: page.title, detail: 'No FAQ section' })),
+  );
+
+  add(
+    'answer-first-opening',
+    'warning',
+    'answers',
+    'Service and guide pages with no direct answer at the top',
+    'Answer engines quote the first thing on the page. When the opening section carries almost ' +
+      'no text, a visitor — and an AI assistant — has to scroll to learn what the service is, ' +
+      'and the quotable summary that wins citations does not exist.',
+    pages
+      .filter((page) => page.type === 'service' || page.type === 'guide')
+      .filter((page) => (walked.get(page.id)?.firstSectionTextLength ?? 0) < 140)
+      .map((page) => ({
+        path: page.path,
+        title: page.title,
+        detail: `~${walked.get(page.id)?.firstSectionTextLength ?? 0} characters before the first scroll`,
+      })),
+  );
+
+  add(
+    'thin-faq',
+    'notice',
+    'answers',
+    'FAQ sections with fewer than three questions',
+    'One or two questions read as decoration. Real FAQs from real enquiries are what generative ' +
+      'assistants cite — and what stops the same question arriving on WhatsApp five times a week.',
+    pages
+      .filter((page) => {
+        const doc = walked.get(page.id);
+        return doc?.hasFaq && doc.faqCount > 0 && doc.faqCount < 3;
+      })
+      .map((page) => ({
+        path: page.path,
+        title: page.title,
+        detail: `${walked.get(page.id)?.faqCount} question(s)`,
+      })),
   );
 
   /* ---------------------------------------------------- GSC opportunities */

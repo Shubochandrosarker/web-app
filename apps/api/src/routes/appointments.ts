@@ -5,6 +5,12 @@ import { schema, withWorkspace, type Database } from '@bos/database';
 import { ApiError } from '../lib/errors.ts';
 import { requirePermission } from '../lib/permissions.ts';
 import { requireUserId, requireWorkspace } from '../lib/context.ts';
+import {
+  assertBookable,
+  cancelReminders,
+  computeSlots,
+  scheduleReminders,
+} from '../services/scheduling.ts';
 import type { AppContext } from '../app.ts';
 
 const status = z.enum(schema.appointmentStatus.enumValues);
@@ -22,6 +28,11 @@ const appointmentInput = z.object({
   meetingUrl: z.url().nullable().optional(),
   notes: z.string().max(10000).nullable().optional(),
   status: status.optional(),
+  /**
+   * Managers recording reality: bypasses configured hours, capacity and
+   * blackouts — never a staff double-booking, which is a fact, not a rule.
+   */
+  force: z.boolean().optional(),
 });
 const appointmentPatch = appointmentInput.partial().extend({
   cancelledReason: z.string().max(300).nullable().optional(),
@@ -99,56 +110,30 @@ async function assertAppointmentReferences(
     locationId?: string | null | undefined;
   },
 ): Promise<void> {
-  const [contact, lead, service, staff, location] = await Promise.all([
-    input.contactId
-      ? tx
-          .select({ id: schema.contacts.id })
-          .from(schema.contacts)
-          .where(and(eq(schema.contacts.id, input.contactId), isNull(schema.contacts.deletedAt)))
-          .limit(1)
-      : Promise.resolve([]),
-    input.leadId
-      ? tx
-          .select({ id: schema.leads.id })
-          .from(schema.leads)
-          .where(and(eq(schema.leads.id, input.leadId), isNull(schema.leads.deletedAt)))
-          .limit(1)
-      : Promise.resolve([]),
-    input.serviceId
-      ? tx
-          .select({ id: schema.services.id })
-          .from(schema.services)
-          .where(and(eq(schema.services.id, input.serviceId), isNull(schema.services.deletedAt)))
-          .limit(1)
-      : Promise.resolve([]),
-    input.staffProfileId
-      ? tx
-          .select({ id: schema.staffProfiles.id })
-          .from(schema.staffProfiles)
-          .where(
-            and(
-              eq(schema.staffProfiles.id, input.staffProfileId),
-              isNull(schema.staffProfiles.deletedAt),
-            ),
-          )
-          .limit(1)
-      : Promise.resolve([]),
-    input.locationId
-      ? tx
-          .select({ id: schema.locations.id })
-          .from(schema.locations)
-          .where(and(eq(schema.locations.id, input.locationId), isNull(schema.locations.deletedAt)))
-          .limit(1)
-      : Promise.resolve([]),
-  ]);
+  // Sequential on purpose: these run inside one transaction, and a single pg
+  // client cannot execute queries concurrently — Promise.all here relies on
+  // command queueing that node-postgres deprecates (removed in pg 9).
+  const lookups = [
+    { id: input.contactId, table: schema.contacts, deletedAt: schema.contacts.deletedAt },
+    { id: input.leadId, table: schema.leads, deletedAt: schema.leads.deletedAt },
+    { id: input.serviceId, table: schema.services, deletedAt: schema.services.deletedAt },
+    {
+      id: input.staffProfileId,
+      table: schema.staffProfiles,
+      deletedAt: schema.staffProfiles.deletedAt,
+    },
+    { id: input.locationId, table: schema.locations, deletedAt: schema.locations.deletedAt },
+  ] as const;
 
-  const invalid =
-    (input.contactId && contact.length === 0) ||
-    (input.leadId && lead.length === 0) ||
-    (input.serviceId && service.length === 0) ||
-    (input.staffProfileId && staff.length === 0) ||
-    (input.locationId && location.length === 0);
-  if (invalid) throw ApiError.badRequest('Every linked record must belong to this workspace.');
+  for (const lookup of lookups) {
+    if (!lookup.id) continue;
+    const [row] = await tx
+      .select({ id: lookup.table.id })
+      .from(lookup.table)
+      .where(and(eq(lookup.table.id, lookup.id), isNull(lookup.deletedAt)))
+      .limit(1);
+    if (!row) throw ApiError.badRequest('Every linked record must belong to this workspace.');
+  }
 }
 
 export function registerAppointmentRoutes(app: FastifyInstance, context: AppContext): void {
@@ -210,6 +195,15 @@ export function registerAppointmentRoutes(app: FastifyInstance, context: AppCont
 
       return withWorkspace(db, workspace.workspaceId, async (tx) => {
         await assertAppointmentReferences(tx, input);
+        await assertBookable(tx, {
+          staffProfileId: input.staffProfileId ?? null,
+          serviceId: input.serviceId ?? null,
+          locationId: input.locationId ?? null,
+          startsAt: new Date(input.startsAt),
+          endsAt: new Date(input.endsAt),
+          timeZone: input.timeZone,
+          force: input.force,
+        });
 
         const [row] = await tx
           .insert(schema.appointments)
@@ -230,6 +224,10 @@ export function registerAppointmentRoutes(app: FastifyInstance, context: AppCont
             createdByUserId: userId,
           })
           .returning({ id: schema.appointments.id });
+        await scheduleReminders(tx, workspace.workspaceId, {
+          id: row!.id,
+          startsAt: new Date(input.startsAt),
+        });
         const appointment = await scopedAppointment(tx, row!.id);
         return { appointment: present(appointment!) };
       });
@@ -259,6 +257,30 @@ export function registerAppointmentRoutes(app: FastifyInstance, context: AppCont
         assertTimeOrder(startsAt, endsAt);
         const now = new Date();
         const nextStatus = input.status ?? current.appointment.status;
+
+        // A reschedule (or staff change) must clear the availability checks
+        // exactly like a fresh booking, minus the appointment's own slot.
+        const timingChanged =
+          input.startsAt !== undefined ||
+          input.endsAt !== undefined ||
+          input.staffProfileId !== undefined;
+        if (timingChanged && nextStatus !== 'cancelled') {
+          await assertBookable(tx, {
+            staffProfileId:
+              input.staffProfileId !== undefined
+                ? input.staffProfileId
+                : current.appointment.staffProfileId,
+            serviceId:
+              input.serviceId !== undefined ? input.serviceId : current.appointment.serviceId,
+            locationId:
+              input.locationId !== undefined ? input.locationId : current.appointment.locationId,
+            startsAt: new Date(startsAt),
+            endsAt: new Date(endsAt),
+            timeZone: input.timeZone ?? current.appointment.timeZone,
+            excludeAppointmentId: id,
+            force: input.force,
+          });
+        }
         const [row] = await tx
           .update(schema.appointments)
           .set({
@@ -285,6 +307,14 @@ export function registerAppointmentRoutes(app: FastifyInstance, context: AppCont
           })
           .where(eq(schema.appointments.id, id))
           .returning();
+        if (nextStatus === 'cancelled') {
+          await cancelReminders(tx, id);
+        } else if (input.startsAt !== undefined) {
+          await scheduleReminders(tx, workspace.workspaceId, {
+            id,
+            startsAt: new Date(startsAt),
+          });
+        }
         const appointment = await scopedAppointment(tx, row!.id);
         return { appointment: present(appointment!) };
       });
@@ -312,8 +342,204 @@ export function registerAppointmentRoutes(app: FastifyInstance, context: AppCont
           .where(and(eq(schema.appointments.id, id), isNull(schema.appointments.deletedAt)))
           .returning({ id: schema.appointments.id });
         if (!row) throw ApiError.hidden('Appointment');
+        await cancelReminders(tx, id);
         const appointment = await scopedAppointment(tx, row.id);
         return { appointment: present(appointment!), message: 'Appointment cancelled.' };
+      });
+    },
+  );
+
+  /* ------------------------------------------------------- availability */
+
+  const ruleInput = z
+    .object({
+      staffProfileId: z.uuid().nullable().optional(),
+      locationId: z.uuid().nullable().optional(),
+      serviceId: z.uuid().nullable().optional(),
+      weekday: z.number().int().min(0).max(6),
+      startMinute: z.number().int().min(0).max(1439),
+      endMinute: z.number().int().min(1).max(1440),
+      slotMinutes: z.number().int().min(5).max(480).default(30),
+      capacity: z.number().int().min(1).max(500).default(1),
+      effectiveFrom: z.iso.datetime({ offset: true }).nullable().optional(),
+      effectiveTo: z.iso.datetime({ offset: true }).nullable().optional(),
+    })
+    .refine((rule) => rule.endMinute > rule.startMinute, {
+      message: 'The window must end after it starts.',
+    });
+
+  const exceptionInput = z
+    .object({
+      staffProfileId: z.uuid().nullable().optional(),
+      locationId: z.uuid().nullable().optional(),
+      startsAt: z.iso.datetime({ offset: true }),
+      endsAt: z.iso.datetime({ offset: true }),
+      isAvailable: z.boolean().default(false),
+      reason: z.string().max(200).nullable().optional(),
+    })
+    .refine((exception) => new Date(exception.endsAt) > new Date(exception.startsAt), {
+      message: 'The window must end after it starts.',
+    });
+
+  app.get(
+    '/v1/availability/rules',
+    { config: { bosAccess: requirePermission('appointments.read') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        const rules = await tx
+          .select()
+          .from(schema.availabilityRules)
+          .orderBy(
+            asc(schema.availabilityRules.weekday),
+            asc(schema.availabilityRules.startMinute),
+          );
+        return { items: rules };
+      });
+    },
+  );
+
+  app.post(
+    '/v1/availability/rules',
+    { config: { bosAccess: requirePermission('appointments.write') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      const input = ruleInput.parse(request.body);
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        await assertAppointmentReferences(tx, {
+          staffProfileId: input.staffProfileId,
+          serviceId: input.serviceId,
+          locationId: input.locationId,
+        });
+        const [rule] = await tx
+          .insert(schema.availabilityRules)
+          .values({
+            workspaceId: workspace.workspaceId,
+            staffProfileId: input.staffProfileId ?? null,
+            locationId: input.locationId ?? null,
+            serviceId: input.serviceId ?? null,
+            weekday: input.weekday,
+            startMinute: input.startMinute,
+            endMinute: input.endMinute,
+            slotMinutes: input.slotMinutes,
+            capacity: input.capacity,
+            effectiveFrom: input.effectiveFrom ? new Date(input.effectiveFrom) : null,
+            effectiveTo: input.effectiveTo ? new Date(input.effectiveTo) : null,
+          })
+          .returning();
+        return { rule };
+      });
+    },
+  );
+
+  app.delete(
+    '/v1/availability/rules/:id',
+    { config: { bosAccess: requirePermission('appointments.write') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      const { id } = z.object({ id: z.uuid() }).parse(request.params);
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        const [rule] = await tx
+          .delete(schema.availabilityRules)
+          .where(eq(schema.availabilityRules.id, id))
+          .returning({ id: schema.availabilityRules.id });
+        if (!rule) throw ApiError.hidden('Availability rule');
+        return { message: 'Rule removed.' };
+      });
+    },
+  );
+
+  app.get(
+    '/v1/availability/exceptions',
+    { config: { bosAccess: requirePermission('appointments.read') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        const items = await tx
+          .select()
+          .from(schema.availabilityExceptions)
+          .orderBy(asc(schema.availabilityExceptions.startsAt))
+          .limit(200);
+        return { items };
+      });
+    },
+  );
+
+  app.post(
+    '/v1/availability/exceptions',
+    { config: { bosAccess: requirePermission('appointments.write') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      const input = exceptionInput.parse(request.body);
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        await assertAppointmentReferences(tx, {
+          staffProfileId: input.staffProfileId,
+          locationId: input.locationId,
+        });
+        const [exception] = await tx
+          .insert(schema.availabilityExceptions)
+          .values({
+            workspaceId: workspace.workspaceId,
+            staffProfileId: input.staffProfileId ?? null,
+            locationId: input.locationId ?? null,
+            startsAt: new Date(input.startsAt),
+            endsAt: new Date(input.endsAt),
+            isAvailable: input.isAvailable,
+            reason: input.reason ?? null,
+          })
+          .returning();
+        return { exception };
+      });
+    },
+  );
+
+  app.delete(
+    '/v1/availability/exceptions/:id',
+    { config: { bosAccess: requirePermission('appointments.write') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      const { id } = z.object({ id: z.uuid() }).parse(request.params);
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        const [exception] = await tx
+          .delete(schema.availabilityExceptions)
+          .where(eq(schema.availabilityExceptions.id, id))
+          .returning({ id: schema.availabilityExceptions.id });
+        if (!exception) throw ApiError.hidden('Availability exception');
+        return { message: 'Exception removed.' };
+      });
+    },
+  );
+
+  app.get(
+    '/v1/availability/slots',
+    { config: { bosAccess: requirePermission('appointments.read') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      const query = z
+        .object({
+          date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          serviceId: z.uuid().optional(),
+          staffProfileId: z.uuid().optional(),
+          locationId: z.uuid().optional(),
+          timeZone: z.string().min(1).max(64).optional(),
+        })
+        .parse(request.query);
+
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        const [row] = await tx
+          .select({ timeZone: schema.workspaces.timeZone })
+          .from(schema.workspaces)
+          .where(eq(schema.workspaces.id, workspace.workspaceId))
+          .limit(1);
+        const timeZone = query.timeZone ?? row?.timeZone ?? 'UTC';
+        const slots = await computeSlots(tx, {
+          date: query.date,
+          timeZone,
+          serviceId: query.serviceId,
+          staffProfileId: query.staffProfileId,
+          locationId: query.locationId,
+        });
+        return { date: query.date, timeZone, slots };
       });
     },
   );

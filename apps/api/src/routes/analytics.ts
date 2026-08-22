@@ -325,4 +325,108 @@ export function registerAnalyticsRoutes(app: FastifyInstance, context: AppContex
       });
     },
   );
+
+  /* ---------------------------------------------------------- attribution */
+
+  /**
+   * Which channel gets the credit for each lead — under a model the viewer
+   * picks, because the honest answer is that both are defensible: first
+   * touch credits discovery, last touch credits conversion. The touches are
+   * precomputed at capture time; this only aggregates them.
+   */
+  app.get(
+    '/v1/analytics/attribution',
+    { config: { bosAccess: requirePermission('analytics.read') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      const query = windowQuery
+        .extend({ model: z.enum(['first_touch', 'last_touch']).default('last_touch') })
+        .parse(request.query);
+      const start = windowStart(query.days);
+
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        const flag =
+          query.model === 'first_touch'
+            ? schema.attributionTouches.isFirstTouch
+            : schema.attributionTouches.isLastTouch;
+
+        const rows = await tx
+          .select({
+            channel: schema.attributionTouches.channel,
+            sourceKey: schema.attributionTouches.sourceKey,
+            leads: sql<number>`count(distinct ${schema.attributionTouches.leadId})::int`,
+          })
+          .from(schema.attributionTouches)
+          .where(
+            and(
+              eq(flag, true),
+              sql`${schema.attributionTouches.leadId} is not null`,
+              gte(schema.attributionTouches.occurredAt, start),
+            ),
+          )
+          .groupBy(schema.attributionTouches.channel, schema.attributionTouches.sourceKey)
+          .orderBy(desc(sql`count(distinct ${schema.attributionTouches.leadId})`));
+
+        return { window: { days: query.days }, model: query.model, rows };
+      });
+    },
+  );
+
+  /* -------------------------------------------------------------- revenue */
+
+  /**
+   * Money actually verified, from the orders module: staff-verified payments
+   * summed per day and per currency. No projection, no pipeline-weighted
+   * guesses — this is the number the bank statement will agree with.
+   */
+  app.get(
+    '/v1/analytics/revenue',
+    { config: { bosAccess: requirePermission('analytics.read') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      const { days } = windowQuery.parse(request.query);
+      const start = windowStart(days);
+
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        const totals = await tx
+          .select({
+            currency: schema.payments.currency,
+            amount: sql<number>`coalesce(sum(${schema.payments.amount}), 0)::int`,
+            payments: sql<number>`count(*)::int`,
+          })
+          .from(schema.payments)
+          .where(and(eq(schema.payments.status, 'verified'), gte(schema.payments.createdAt, start)))
+          .groupBy(schema.payments.currency);
+
+        const daily = await tx
+          .select({
+            day: sql<string>`to_char(${schema.payments.createdAt}, 'YYYY-MM-DD')`,
+            currency: schema.payments.currency,
+            amount: sql<number>`coalesce(sum(${schema.payments.amount}), 0)::int`,
+          })
+          .from(schema.payments)
+          .where(and(eq(schema.payments.status, 'verified'), gte(schema.payments.createdAt, start)))
+          .groupBy(
+            sql`to_char(${schema.payments.createdAt}, 'YYYY-MM-DD')`,
+            schema.payments.currency,
+          )
+          .orderBy(sql`to_char(${schema.payments.createdAt}, 'YYYY-MM-DD')`);
+
+        const orders = await tx
+          .select({
+            completed: sql<number>`count(*) filter (where ${schema.orders.status} = 'completed')::int`,
+            total: sql<number>`count(*)::int`,
+          })
+          .from(schema.orders)
+          .where(and(gte(schema.orders.createdAt, start), sql`${schema.orders.deletedAt} is null`));
+
+        return {
+          window: { days },
+          totals,
+          daily,
+          orders: orders[0] ?? { completed: 0, total: 0 },
+        };
+      });
+    },
+  );
 }

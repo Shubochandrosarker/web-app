@@ -1,6 +1,6 @@
 # Implementation tasks
 
-30 tasks across 8 phases. Each has a stated scope, dependencies and acceptance
+37 tasks across 8 phases. Each has a stated scope, dependencies and acceptance
 criteria, so "done" is a check somebody else can run rather than an opinion.
 
 Estimates are for one experienced full-stack developer, in working days. They
@@ -56,14 +56,14 @@ what remains is a user interface for it. The estimate shown is what is left.
 
 These modules were added after the original 30-task board was written:
 
-| Module        | Current state                                                            |
-| ------------- | ------------------------------------------------------------------------ |
-| Services      | API and dashboard catalogue CRUD, archive and duplicate                  |
-| Appointments  | API and dashboard lifecycle over the existing scheduling schema          |
-| Reviews       | API and dashboard capture, moderation and response fields                |
-| Local SEO     | API and dashboard location/NAP management and coverage checks            |
-| Landing pages | Dashboard projection over CMS `landing_page` entries                     |
-| Orders        | Incomplete — schema, migration, payments and fulfilment are still absent |
+| Module        | Current state                                                                                               |
+| ------------- | ----------------------------------------------------------------------------------------------------------- |
+| Services      | API and dashboard catalogue CRUD, archive and duplicate                                                     |
+| Appointments  | API and dashboard lifecycle over the existing scheduling schema                                             |
+| Reviews       | API and dashboard capture, moderation and response fields                                                   |
+| Local SEO     | API and dashboard location/NAP management and coverage checks                                               |
+| Landing pages | Dashboard projection over CMS `landing_page` entries                                                        |
+| Orders        | Complete — schema + migration, lifecycle transitions, manual payments with verify/refund, dashboard screens |
 
 ## What "done" means for the launch
 
@@ -72,11 +72,14 @@ a service page, submits a request, becomes a CRM lead with a confirmation, and
 staff work it from the dashboard — with authentication, RBAC, tenant isolation,
 sanitisation, a real CSP and a smoke test around it.
 
-The closeout branch adds the previously hidden Services, Appointments, Reviews,
-Local SEO and Landing Pages projections. Orders remain incomplete because this
-checkout does not yet contain their schema, migration, payment reconciliation
-or fulfilment lifecycle. NuESheba's real content and configuration (TASK-301/302)
-remain gated on owner facts recorded in
+The closeout adds the previously hidden Services, Appointments, Reviews,
+Local SEO and Landing Pages projections, and completes Orders: tables,
+migration, an explicit status lifecycle, and manual payments behind the
+PaymentProvider abstraction, with the module live in navigation. Beyond the
+module board it also lands the scheduling engine, cron-triggered
+automations, attribution and revenue analytics, global search,
+notifications, team operations and the audit log. NuESheba's real content
+and configuration (TASK-301/302) remain gated on owner facts recorded in
 [`docs/owner-input-required.md`](../owner-input-required.md).
 
 The readiness command has two deliberate scopes:

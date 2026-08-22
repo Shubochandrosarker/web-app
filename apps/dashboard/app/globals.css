@@ -145,6 +145,34 @@ code.wrap {
   margin-right: auto;
 }
 
+.shell-search input {
+  max-width: 220px;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface, transparent);
+  color: inherit;
+}
+
+.shell-bell {
+  position: relative;
+  text-decoration: none;
+  padding: 0.25rem;
+}
+
+.shell-bell-count {
+  position: absolute;
+  top: -0.35rem;
+  right: -0.5rem;
+  background: var(--color-danger, #b91c1c);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  font-weight: 700;
+}
+
 .shell-menu summary,
 .shell-account summary {
   cursor: pointer;

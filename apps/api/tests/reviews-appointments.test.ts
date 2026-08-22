@@ -2,7 +2,14 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import { schema, withoutTenantScope } from '@bos/database';
-import { authHeaders, createHarness, createMember, login, type Harness } from './helpers.ts';
+import {
+  authHeaders,
+  createHarness,
+  createMember,
+  createSecondaryWorkspace,
+  login,
+  type Harness,
+} from './helpers.ts';
 
 let harness: Harness;
 let managerHeaders: Record<string, string>;
@@ -134,5 +141,68 @@ describe('reviews and appointments', () => {
       (cancelled.json() as { appointment: { status: string } }).appointment.status,
       'cancelled',
     );
+  });
+
+  it('rejects an appointment whose contact belongs to another workspace', async () => {
+    const other = await createSecondaryWorkspace(harness);
+    try {
+      const [foreignContact] = await withoutTenantScope(harness.db, (tx) =>
+        tx
+          .insert(schema.contacts)
+          .values({
+            workspaceId: other.workspaceId,
+            fullName: 'Somebody else entirely',
+            email: `${randomUUID().slice(0, 8)}@example.test`,
+          })
+          .returning({ id: schema.contacts.id }),
+      );
+
+      const startsAt = new Date(Date.now() + 24 * 3600_000);
+      const created = await harness.app.inject({
+        method: 'POST',
+        url: '/v1/appointments',
+        headers: managerHeaders,
+        payload: {
+          contactId: foreignContact!.id,
+          startsAt: startsAt.toISOString(),
+          endsAt: new Date(startsAt.getTime() + 3600_000).toISOString(),
+          timeZone: 'Asia/Dhaka',
+        },
+      });
+      assert.equal(created.statusCode, 400, created.body);
+    } finally {
+      await other.drop();
+    }
+  });
+
+  it('rejects a review whose contact belongs to another workspace', async () => {
+    const other = await createSecondaryWorkspace(harness);
+    try {
+      const [foreignContact] = await withoutTenantScope(harness.db, (tx) =>
+        tx
+          .insert(schema.contacts)
+          .values({
+            workspaceId: other.workspaceId,
+            fullName: 'Foreign reviewer',
+            email: `${randomUUID().slice(0, 8)}@example.test`,
+          })
+          .returning({ id: schema.contacts.id }),
+      );
+
+      const created = await harness.app.inject({
+        method: 'POST',
+        url: '/v1/reviews',
+        headers: managerHeaders,
+        payload: {
+          authorName: 'Foreign reviewer',
+          rating: 5,
+          body: 'A review pinned to a contact from another tenant.',
+          contactId: foreignContact!.id,
+        },
+      });
+      assert.equal(created.statusCode, 400, created.body);
+    } finally {
+      await other.drop();
+    }
   });
 });

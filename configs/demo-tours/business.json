@@ -1,0 +1,47 @@
+{
+  "slug": "demo-tours",
+  "businessType": "tour_operator",
+  "siteUrl": "https://demo-tours.example.com",
+  "environment": {
+    "releaseEligible": false
+  },
+  "brand": {
+    "name": "Demo Tours",
+    "tagline": "A fictional tour operator exercising every operations module",
+    "primaryColor": "#b45309"
+  },
+  "nap": {
+    "legalName": "Demo Tours Ltd (fictional)",
+    "displayName": "Demo Tours",
+    "streetAddress": "42 Example Harbour Road",
+    "addressLocality": "Queenstown",
+    "addressCountry": "NZ",
+    "telephone": "+6435550142",
+    "email": "bookings@demo-tours.example.com",
+    "openingHours": ["Mo-Su 08:00-20:00"],
+    "areaServed": ["New Zealand"],
+    "sameAs": []
+  },
+  "locale": {
+    "defaultLocale": "en",
+    "supportedLocales": ["en"],
+    "timeZone": "Pacific/Auckland",
+    "currency": "NZD",
+    "phoneCountryCode": "+64"
+  },
+  "legal": {},
+  "modules": [
+    "ops.services",
+    "ops.scheduling",
+    "ops.orders",
+    "reputation.reviews",
+    "reputation.local_seo",
+    "crm.leads",
+    "comms.email"
+  ],
+  "disabledModules": ["comms.whatsapp", "ops.documents"],
+  "features": {
+    "documentUpload": false,
+    "whatsappAcknowledgement": false
+  }
+}

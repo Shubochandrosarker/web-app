@@ -516,3 +516,138 @@ describe('authorisation and versioning', () => {
     assert.equal(response.statusCode, 400);
   });
 });
+
+describe('schedule triggers, clone and the failed-run queue', () => {
+  it('a schedule automation enrolls when its cron matches, exactly once per minute', async () => {
+    const automationId = await createAutomation({
+      name: 'Monday morning sweep',
+      trigger: { kind: 'schedule', cron: '30 9 * * 1' },
+      steps: [
+        {
+          id: randomUUID(),
+          type: 'action',
+          action: 'create_task',
+          config: { title: 'Weekly review of open enquiries' },
+          retry: { maxAttempts: 3, backoffSeconds: 60 },
+        },
+      ],
+      reentry: 'always',
+    });
+
+    // 2026-01-05 is a Monday; the harness workspace runs in Asia/Dhaka
+    // (UTC+6), so 09:30 local is 03:30Z — the cron reads workspace time.
+    const matching = '2026-01-05T03:30:00Z';
+    const sweep = async (now: string) => {
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/v1/internal/jobs/automations.schedule',
+        headers: { 'x-bos-edge-secret': EDGE_SECRET },
+        payload: { now },
+      });
+      assert.equal(response.statusCode, 200, response.body);
+      return response.json() as { matched: number };
+    };
+
+    const first = await sweep(matching);
+    assert.equal(first.matched, 1, 'the sweep matched the automation');
+    let runs = await runsFor(automationId);
+    assert.equal(runs.length, 1, 'one run for the matching minute');
+
+    // The dispatcher passes every few seconds — the same minute cannot
+    // enroll twice, and a non-matching minute enrolls nothing.
+    await sweep(matching);
+    await sweep('2026-01-05T03:31:00Z');
+    await sweep('2026-01-06T03:30:00Z');
+    runs = await runsFor(automationId);
+    assert.equal(runs.length, 1, 'still exactly one run');
+
+    await disableAutomation(automationId);
+  });
+
+  it('a malformed cron is refused at save time, loudly', async () => {
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/v1/automations',
+      headers,
+      payload: {
+        name: 'Broken schedule',
+        trigger: { kind: 'schedule', cron: '99 * * * *' },
+        steps: [
+          {
+            id: randomUUID(),
+            type: 'action',
+            action: 'create_task',
+            config: { title: 'Never' },
+            retry: { maxAttempts: 3, backoffSeconds: 60 },
+          },
+        ],
+        reentry: 'always',
+      },
+    });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.match(response.body, /cron minute/);
+  });
+
+  it('clone produces a disabled draft with the same definition and a fresh slug', async () => {
+    const sourceId = await createAutomation({
+      name: 'Cloneable',
+      trigger: { kind: 'event', event: 'lead.created' },
+      steps: [
+        {
+          id: randomUUID(),
+          type: 'action',
+          action: 'create_task',
+          config: { title: 'Original step' },
+          retry: { maxAttempts: 3, backoffSeconds: 60 },
+        },
+      ],
+      reentry: 'always',
+    });
+    await disableAutomation(sourceId);
+
+    const cloned = await harness.app.inject({
+      method: 'POST',
+      url: `/v1/automations/${sourceId}/clone`,
+      headers,
+      payload: {},
+    });
+    assert.equal(cloned.statusCode, 201, cloned.body);
+    const cloneId = (cloned.json() as { id: string }).id;
+
+    const detail = await harness.app.inject({
+      method: 'GET',
+      url: `/v1/automations/${cloneId}`,
+      headers,
+    });
+    const body = detail.json() as {
+      enabled: boolean;
+      name: string;
+      definition: { steps: { config: { title: string } }[] };
+      metrics: { total: number };
+      versions: { version: number }[];
+    };
+    assert.equal(body.enabled, false, 'clones start off');
+    assert.match(body.name, /copy/);
+    assert.equal(body.definition.steps[0]?.config.title, 'Original step');
+    assert.equal(body.metrics.total, 0, 'a clone starts with no run history');
+    assert.equal(body.versions.length, 1);
+  });
+
+  it('the cross-automation runs queue lists failures for replay', async () => {
+    const listed = await harness.app.inject({
+      method: 'GET',
+      url: '/v1/automations/runs?status=failed&limit=10',
+      headers,
+    });
+    assert.equal(listed.statusCode, 200, listed.body);
+    const { items } = listed.json() as {
+      items: { automationName: string; failureReason: string | null }[];
+    };
+    // Earlier suites dead-letter at least one run; each row names its
+    // automation so a person can decide between replaying and fixing.
+    assert.ok(Array.isArray(items));
+    for (const item of items) {
+      assert.ok(item.automationName.length > 0);
+    }
+  });
+});

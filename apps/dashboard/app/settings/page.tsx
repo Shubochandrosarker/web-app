@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation';
-import { apiFetch, getSession } from '@/lib/api';
+import { apiFetch, can, getSession } from '@/lib/api';
 import { DashboardShell } from '@/components/shell';
 import { MfaPanel } from '@/components/mfa-panel';
 import { SessionsPanel, type SessionRow } from '@/components/sessions-panel';
+import { IntegrationsPanel, type IntegrationsStatus } from '@/components/integrations-panel';
 
 export const metadata = { title: 'Settings' };
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,10 @@ export default async function SettingsPage() {
   const { sessions } = await apiFetch<{ sessions: SessionRow[] }>('/v1/auth/sessions', {
     workspaceScoped: false,
   }).catch(() => ({ sessions: [] as SessionRow[] }));
+
+  const integrations = can(session, 'settings.read')
+    ? await apiFetch<IntegrationsStatus>('/v1/settings/integrations').catch(() => null)
+    : null;
 
   return (
     <DashboardShell session={session} current="/settings">
@@ -28,6 +33,9 @@ export default async function SettingsPage() {
         <div className="detail-main">
           <MfaPanel enabled={session.user.mfaEnabled} />
           <SessionsPanel sessions={sessions} />
+          {integrations ? (
+            <IntegrationsPanel status={integrations} canWrite={can(session, 'settings.write')} />
+          ) : null}
         </div>
 
         <aside className="detail-side">

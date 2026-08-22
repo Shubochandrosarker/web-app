@@ -791,7 +791,10 @@ type BuilderStepInput =
 export interface BuilderDefinitionInput {
   name: string;
   description: string;
+  triggerKind: 'event' | 'schedule';
   triggerEvent: string;
+  /** Five-field cron, used when triggerKind is 'schedule'. */
+  triggerCron: string;
   condition: BuilderConditionInput | null;
   steps: BuilderStepInput[];
   reentry: 'once_per_contact' | 'once_per_entity' | 'always';
@@ -885,7 +888,10 @@ export async function saveAutomation(
   const body = {
     name: builder.name,
     ...(builder.description ? { description: builder.description } : {}),
-    trigger: { kind: 'event', event: builder.triggerEvent },
+    trigger:
+      builder.triggerKind === 'schedule'
+        ? { kind: 'schedule', cron: builder.triggerCron.trim() }
+        : { kind: 'event', event: builder.triggerEvent },
     ...(builder.condition && builder.condition.predicates.some((p) => p.path)
       ? { condition: apiCondition(builder.condition) }
       : {}),
@@ -917,6 +923,21 @@ export async function setAutomationEnabled(
     revalidatePath(`/automations/${automationId}`);
     revalidatePath('/automations');
     return { ok: true, message: enabled ? 'Automation turned on.' : 'Automation turned off.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function cloneAutomation(
+  automationId: string,
+): Promise<ActionResult & { id?: string }> {
+  try {
+    const created = await apiFetch<{ id: string }>(`/v1/automations/${automationId}/clone`, {
+      method: 'POST',
+      body: {},
+    });
+    revalidatePath('/automations');
+    return { ok: true, id: created.id, message: 'Cloned as a disabled draft.' };
   } catch (error) {
     return { ok: false, message: describe(error) };
   }
@@ -1100,6 +1121,334 @@ export async function cancelAppointment(
     revalidatePath('/appointments');
     revalidatePath(`/appointments/${appointmentId}`);
     return { ok: true, message: 'Appointment cancelled.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/**
+ * Apply an AI meta suggestion into the page's SEO fields — an explicit,
+ * per-field human decision, never automatic. The PATCH replaces the whole
+ * seo object, so current values are fetched and merged first: applying a
+ * title must not erase the description.
+ */
+export async function applySeoSuggestion(
+  contentId: string,
+  patch: { readonly title?: string | undefined; readonly description?: string | undefined },
+): Promise<ActionResult> {
+  try {
+    const current = await apiFetch<{
+      seo: {
+        title: string | null;
+        description: string | null;
+        canonicalUrl: string | null;
+        noindex: boolean;
+        nofollow: boolean;
+        ogImageMediaId: string | null;
+      } | null;
+    }>(`/v1/cms/content/${contentId}`);
+
+    const seo = current.seo;
+    await apiFetch(`/v1/cms/content/${contentId}`, {
+      method: 'PATCH',
+      body: {
+        seo: {
+          title: (patch.title ?? seo?.title ?? undefined)?.slice(0, 70) || undefined,
+          description:
+            (patch.description ?? seo?.description ?? undefined)?.slice(0, 180) || undefined,
+          canonicalUrl: seo?.canonicalUrl ?? undefined,
+          noindex: seo?.noindex ?? false,
+          nofollow: seo?.nofollow ?? false,
+          ogImageMediaId: seo?.ogImageMediaId ?? undefined,
+        },
+      },
+    });
+    revalidatePath('/seo');
+    revalidatePath(`/content/${contentId}`);
+    return { ok: true, message: 'Applied to the page. Republish for it to go live.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function inviteMember(input: {
+  readonly email: string;
+  readonly fullName: string;
+  readonly role: string;
+}): Promise<ActionResult> {
+  if (!input.email.trim() || !input.fullName.trim()) {
+    return { ok: false, message: 'An invitation needs a name and an email address.' };
+  }
+  try {
+    const result = await apiFetch<{ message: string }>('/v1/members/invite', {
+      method: 'POST',
+      body: { email: input.email.trim(), fullName: input.fullName.trim(), role: input.role },
+    });
+    revalidatePath('/team');
+    return { ok: true, message: result.message };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function updateMember(
+  userId: string,
+  patch: { readonly role?: string; readonly status?: 'active' | 'suspended' },
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/members/${userId}`, { method: 'PATCH', body: patch });
+    revalidatePath('/team');
+    return { ok: true, message: 'Member updated.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function markNotificationRead(id: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/notifications/${id}/read`, { method: 'POST', body: {} });
+    revalidatePath('/notifications');
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function markAllNotificationsRead(): Promise<ActionResult> {
+  try {
+    await apiFetch('/v1/notifications/read-all', { method: 'POST', body: {} });
+    revalidatePath('/notifications');
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function syncSearchConsole(): Promise<ActionResult> {
+  try {
+    const outcome = await apiFetch<{ ok: boolean; error?: string }>(
+      '/v1/settings/search-console/sync',
+      { method: 'POST', body: {} },
+    );
+    revalidatePath('/settings');
+    revalidatePath('/analytics/search');
+    return outcome.ok
+      ? { ok: true, message: 'Search Console sync completed.' }
+      : { ok: false, message: outcome.error ?? 'Sync failed.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function checkContentProvider(): Promise<
+  ActionResult & { reachable?: boolean | null; detail?: string }
+> {
+  try {
+    const outcome = await apiFetch<{
+      provider: string;
+      reachable: boolean | null;
+      detail: string;
+    }>('/v1/settings/content-provider/check', { method: 'POST', body: {} });
+    return { ok: true, reachable: outcome.reachable, detail: outcome.detail };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/* ----------------------------------------------------------- availability */
+
+export interface AvailabilityRulePayload {
+  readonly staffProfileId: string | null;
+  readonly locationId: string | null;
+  readonly serviceId: string | null;
+  readonly weekday: number;
+  readonly startMinute: number;
+  readonly endMinute: number;
+  readonly slotMinutes: number;
+  readonly capacity: number;
+}
+
+export async function createAvailabilityRule(
+  input: AvailabilityRulePayload,
+): Promise<ActionResult> {
+  try {
+    await apiFetch('/v1/availability/rules', {
+      method: 'POST',
+      body: {
+        ...input,
+        staffProfileId: input.staffProfileId?.trim() || null,
+        locationId: input.locationId?.trim() || null,
+        serviceId: input.serviceId?.trim() || null,
+      },
+    });
+    revalidatePath('/appointments/availability');
+    return { ok: true, message: 'Availability rule added.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function deleteAvailabilityRule(ruleId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/availability/rules/${ruleId}`, { method: 'DELETE' });
+    revalidatePath('/appointments/availability');
+    return { ok: true, message: 'Rule removed.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function createAvailabilityException(input: {
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly isAvailable: boolean;
+  readonly reason: string | null;
+}): Promise<ActionResult> {
+  try {
+    await apiFetch('/v1/availability/exceptions', {
+      method: 'POST',
+      body: { ...input, reason: input.reason?.trim() || null },
+    });
+    revalidatePath('/appointments/availability');
+    return { ok: true, message: input.isAvailable ? 'Extra hours added.' : 'Blackout added.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function deleteAvailabilityException(exceptionId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/availability/exceptions/${exceptionId}`, { method: 'DELETE' });
+    revalidatePath('/appointments/availability');
+    return { ok: true, message: 'Exception removed.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+/* ----------------------------------------------------------------- orders */
+
+export interface OrderItemPayload {
+  readonly serviceId: string | null;
+  readonly name: string;
+  readonly quantity: number;
+  readonly unitAmount: number;
+}
+
+export interface OrderPayload {
+  readonly contactId: string;
+  readonly leadId: string | null;
+  readonly currency: string;
+  readonly discountAmount: number;
+  readonly notes: string | null;
+  readonly items: OrderItemPayload[];
+}
+
+export async function saveOrder(
+  orderId: string | null,
+  input: OrderPayload,
+  options: { readonly notesOnly?: boolean } = {},
+): Promise<ActionResult & { id?: string }> {
+  if (!orderId && !input.contactId.trim()) {
+    return { ok: false, message: 'An order needs a contact.' };
+  }
+  if (!options.notesOnly && input.items.length === 0) {
+    return { ok: false, message: 'An order needs at least one line.' };
+  }
+
+  const items = input.items.map((item) => ({
+    serviceId: item.serviceId?.trim() || null,
+    name: item.name.trim() || undefined,
+    quantity: item.quantity,
+    unitAmount: item.unitAmount,
+  }));
+
+  try {
+    const result = await apiFetch<{ order: { id: string } }>(
+      orderId ? `/v1/orders/${orderId}` : '/v1/orders',
+      {
+        method: orderId ? 'PATCH' : 'POST',
+        body: orderId
+          ? options.notesOnly
+            ? { notes: input.notes?.trim() || null }
+            : { notes: input.notes?.trim() || null, discountAmount: input.discountAmount, items }
+          : {
+              contactId: input.contactId.trim(),
+              leadId: input.leadId?.trim() || null,
+              currency: input.currency.trim().toUpperCase(),
+              discountAmount: input.discountAmount,
+              notes: input.notes?.trim() || null,
+              items,
+            },
+      },
+    );
+    revalidatePath('/orders');
+    if (orderId) revalidatePath(`/orders/${orderId}`);
+    return { ok: true, id: result.order.id, message: 'Order saved.' };
+  } catch (error) {
+    return { ok: false, message: describe(error), ...fieldErrorsFrom(error) };
+  }
+}
+
+export async function setOrderStatus(
+  orderId: string,
+  status: string,
+  reason?: string,
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/orders/${orderId}/status`, {
+      method: 'POST',
+      body: { status, reason: reason?.trim() || null },
+    });
+    revalidatePath('/orders');
+    revalidatePath(`/orders/${orderId}`);
+    return { ok: true, message: `Order moved to ${status.replace('_', ' ')}.` };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function recordOrderPayment(
+  orderId: string,
+  input: {
+    readonly method: string;
+    readonly amount: number;
+    readonly reference: string | null;
+    readonly notes: string | null;
+  },
+): Promise<ActionResult> {
+  if (!Number.isInteger(input.amount) || input.amount <= 0) {
+    return { ok: false, message: 'The amount must be a positive whole number in minor units.' };
+  }
+  try {
+    await apiFetch(`/v1/orders/${orderId}/payments`, {
+      method: 'POST',
+      body: {
+        method: input.method,
+        amount: input.amount,
+        reference: input.reference?.trim() || null,
+        notes: input.notes?.trim() || null,
+        verified: true,
+      },
+    });
+    revalidatePath(`/orders/${orderId}`);
+    return { ok: true, message: 'Payment recorded.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function refundOrderPayment(
+  orderId: string,
+  paymentId: string,
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/orders/${orderId}/payments/${paymentId}/refund`, {
+      method: 'POST',
+      body: {},
+    });
+    revalidatePath(`/orders/${orderId}`);
+    return { ok: true, message: 'Payment marked refunded.' };
   } catch (error) {
     return { ok: false, message: describe(error) };
   }

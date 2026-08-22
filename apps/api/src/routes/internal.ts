@@ -183,6 +183,12 @@ export function createOutboxHandler(
     await engine.enrollFromEvent(event);
     await engine.resumeWaitingForEvent(event);
 
+    // In-app notifications for the events a person should notice. Inserts
+    // are cheap and idempotence is not required: a redelivered event at
+    // worst repeats a heads-up, never an action.
+    const { notifyFromEvent } = await import('../services/notify.ts');
+    await notifyFromEvent(context.db, event).catch(() => undefined);
+
     switch (event.name) {
       case 'lead.created':
         await notifications.handleLeadCreated(
@@ -352,6 +358,25 @@ export function registerInternalRoutes(
     async () => {
       const resumed = await engine.resumeDueRuns();
       return { resumed };
+    },
+  );
+
+  /**
+   * Enroll schedule-triggered automations whose cron matches the current
+   * minute. The dispatcher sweeps this continuously; the cron backstop keeps
+   * schedules firing when every instance's loop has died. Idempotent per
+   * minute via the run dedupe key, so overlap between the two is harmless.
+   * Tests may pass `{ now }` to evaluate a specific instant.
+   */
+  app.post(
+    '/v1/internal/jobs/automations.schedule',
+    { config: { bosAccess: internalRoute() } },
+    async (request) => {
+      const body = z
+        .object({ now: z.iso.datetime({ offset: true }).optional() })
+        .parse(request.body ?? {});
+      const matched = await engine.runDueSchedules(body.now ? new Date(body.now) : undefined);
+      return { matched };
     },
   );
 
