@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, isNull, or } from 'drizzle-orm';
+import { and, desc, ilike, isNull, or } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { schema, withWorkspace, type Database } from '@bos/database';
