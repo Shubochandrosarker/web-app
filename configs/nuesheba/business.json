@@ -2,6 +2,9 @@
   "slug": "nuesheba",
   "businessType": "education_service",
   "siteUrl": "https://nuesheba.com",
+  "environment": {
+    "releaseEligible": true
+  },
   "brand": {
     "name": "NuESheba",
     "tagline": "National University certificate and transcript assistance",

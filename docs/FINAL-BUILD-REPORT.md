@@ -1,7 +1,8 @@
 # Final build report
 
-State of the platform at the end of the production build-out
-(branch `claude/business-os-production-els802`, continuing from merged PR #5).
+State of the platform at the current closeout build
+(branch `feat/business-os-final-closeout`, continuing from the repository's
+latest `main`).
 The companion [`FINAL-TEST-REPORT.md`](./FINAL-TEST-REPORT.md) carries the
 verification evidence; [`owner-input-required.md`](./owner-input-required.md)
 carries everything that still needs a fact only the owner has.
@@ -65,6 +66,15 @@ directory under `configs/`.
   business facts, and no code path from model output to published content.
 - **WordPress adapter** — real: canonical-link path resolution, rendered
   HTML sanitised with the CMS's own policy, stable derived ids, pagination.
+- **Business catalogue and local SEO** — permissioned Services and Locations
+  CRUD, archive/duplicate flows, canonical NAP fields and a dashboard coverage
+  view. Demo and fixture configurations are excluded from release eligibility.
+- **Scheduling** — permissioned appointment list/detail/create/reschedule/status
+  and cancellation flows over the existing availability and appointment schema.
+- **Reviews** — permissioned review capture, moderation, approval state and
+  response fields, with approved-only public reference loading preserved.
+- **Landing pages** — a dedicated dashboard projection over the existing CMS
+  landing-page content type, including creation, filtering and row actions.
 - **Multi-tenancy proven** — a second (deliberately fictional) tenant
   provisions end to end with different country, currency, modules and
   vocabulary; core code carries no `+880`, no `education_service`, no
@@ -85,12 +95,16 @@ directory under `configs/`.
   the services table. Nothing publishes until a person supplies the facts.
   This is the owner-fact policy working as designed, not a shortcut.
 
-### Explicitly out of scope for v1 (decided, not forgotten)
+### Explicitly still incomplete
 
-Navigation keeps these hidden (`pending` in `lib/navigation.ts`) and no code
-pretends otherwise: landing-pages module, services management UI,
-scheduling/appointments, orders, reviews, local-SEO screens. Each has a
-module id, a nav slot and a clean place to land when the business needs it.
+Orders remain hidden in navigation. This checkout has no orders table,
+migration, payment reconciliation contract or fulfilment lifecycle, so the
+module is not represented as complete. That is a concrete engineering gap,
+not an owner-fact placeholder.
+
+NuESheba is also not production-ready until the real owner facts and provider
+credentials in `docs/owner-input-required.md` are supplied and the staging,
+backup, browser and provider checks in the go-live runbook are executed.
 
 ## Operational readiness
 

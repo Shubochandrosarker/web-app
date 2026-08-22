@@ -56,6 +56,9 @@ curl -s https://staging.nuesheba.com | grep -o 'noindex' # present
       fails while the config carries a placeholder phone number, email or
       address, because those are published as the business's NAP in
       `LocalBusiness` structured data and in the footer of every page.
+- [ ] The production config opts in with `environment.releaseEligible: true`.
+      Demo and fixture configs must keep it false; `pnpm check:readiness
+--release-eligible` must never use them as release inputs.
 - [ ] The NAP in `configs/nuesheba/business.json` matches the **Google Business
       Profile character for character** — including punctuation and
       abbreviations. This is the single highest-leverage local SEO detail and

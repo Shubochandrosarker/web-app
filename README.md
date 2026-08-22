@@ -121,14 +121,15 @@ sign in → dashboard → lead → move it along the pipeline → note, task, fo
 | Authorisation    | Every route declares a permission; the boot fails if one does not           |
 | Content          | Authoring API, sanitisation boundary, all 17 section renderers, tag caching |
 | CRM              | Public form → contact, lead, activity and event in one transaction          |
-| Tests            | 79 automated, against a real Postgres and Redis                             |
+| Tests            | Unit and integration suites, with real Postgres/Redis integration in CI     |
 | Docs             | 10 architecture documents, 17 ADRs, deployment and go-live runbooks         |
 
-What is deliberately **not** built for this milestone — the automation builder,
-the analytics dashboard, the remaining CRM screens — is listed in
-[`docs/tasks/README.md`](docs/tasks/README.md) and in
-[the go-live checklist](docs/deployment/go-live.md), so nobody discovers it as
-a surprise.
+The current closeout branch also includes the Services, Appointments, Reviews,
+Local SEO and Landing Pages management screens. Orders remain deliberately
+blocked until their schema, migration and payment/fulfilment contract are
+implemented. The remaining owner-gated launch facts are listed in
+[`docs/owner-input-required.md`](docs/owner-input-required.md) and
+[the go-live checklist](docs/deployment/go-live.md).
 
 ## Deploying
 

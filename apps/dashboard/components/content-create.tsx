@@ -34,10 +34,16 @@ function slugify(value: string): string {
     .slice(0, 140);
 }
 
-export function NewContentButton({ locale }: { readonly locale: string }) {
+export function NewContentButton({
+  locale,
+  initialType = 'page',
+}: {
+  readonly locale: string;
+  readonly initialType?: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [type, setType] = useState('page');
+  const [type, setType] = useState(initialType);
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
