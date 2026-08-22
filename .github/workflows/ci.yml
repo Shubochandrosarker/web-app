@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
 
@@ -84,6 +84,8 @@ jobs:
           --health-retries 5
 
     steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
@@ -205,6 +207,8 @@ jobs:
       EMAIL_FROM_NAME: Business OS CI
 
     steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
@@ -351,6 +355,8 @@ jobs:
     timeout-minutes: 5
 
     steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
@@ -384,6 +390,8 @@ jobs:
     timeout-minutes: 5
 
     steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
