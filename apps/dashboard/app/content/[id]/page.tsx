@@ -109,7 +109,7 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/+$/, '');
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/content">
+    <DashboardShell session={session} current="/content">
       <div className="page-header">
         <div>
           <p className="breadcrumb">
@@ -137,6 +137,7 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
         excerpt={entry.excerpt ?? ''}
         document={entry.document}
         status={entry.status}
+        publishedAt={entry.publishedAt}
         path={entry.path}
         siteUrl={siteUrl}
         seo={{

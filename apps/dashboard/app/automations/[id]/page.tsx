@@ -217,7 +217,7 @@ export default async function AutomationDetailPage({
   };
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/automations">
+    <DashboardShell session={session} current="/automations">
       <div className="page-header">
         <div>
           <p className="breadcrumb">

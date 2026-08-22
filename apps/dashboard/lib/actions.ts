@@ -297,10 +297,14 @@ export async function reopenTask(taskId: string, leadId?: string): Promise<Actio
 
 export async function setContentStatus(
   contentId: string,
-  status: 'draft' | 'published' | 'archived',
+  status: 'draft' | 'published' | 'scheduled' | 'archived',
+  publishAt?: string,
 ): Promise<ActionResult> {
   try {
-    await apiFetch(`/v1/cms/content/${contentId}/status`, { method: 'POST', body: { status } });
+    await apiFetch(`/v1/cms/content/${contentId}/status`, {
+      method: 'POST',
+      body: { status, ...(publishAt ? { publishAt } : {}) },
+    });
     revalidatePath('/content');
     revalidatePath(`/content/${contentId}`);
     return { ok: true };

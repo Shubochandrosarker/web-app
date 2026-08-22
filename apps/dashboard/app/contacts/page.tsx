@@ -41,7 +41,7 @@ export default async function ContactsPage({
   if (nextCursor) nextPageQuery.set('cursor', nextCursor);
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/contacts">
+    <DashboardShell session={session} current="/contacts">
       <div className="page-header">
         <div>
           <h1>Contacts</h1>

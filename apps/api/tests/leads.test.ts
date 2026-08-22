@@ -727,3 +727,54 @@ describe('analytics ingestion', () => {
     }
   });
 });
+
+describe('tenant-neutral phone handling', () => {
+  it('a tenant with no phoneCountryCode accepts only full international numbers', async () => {
+    // The secondary workspace has no locale.phoneCountryCode configured —
+    // core code must not fall back to any country of its own.
+    const other = await createSecondaryWorkspace(harness);
+    await withoutTenantScope(harness.db, (tx) =>
+      tx.insert(schema.forms).values({
+        workspaceId: other.workspaceId,
+        slug: 'contact',
+        name: 'Contact',
+        fields: [
+          { name: 'name', label: 'Name', type: 'text', required: true, options: [] },
+          { name: 'phone', label: 'Phone', type: 'tel', required: true, options: [] },
+        ],
+        submitLabel: 'Send',
+        outcome: 'lead',
+        spamConfig: { minFillMs: 0 },
+        requiresConsent: false,
+        enabled: true,
+      }),
+    );
+
+    await clearRateLimits(harness);
+    const local = await harness.app.inject({
+      method: 'POST',
+      url: `/v1/forms/contact/submissions?workspace=${other.workspaceSlug}`,
+      payload: {
+        values: { name: 'Neutral Person', phone: '01712345678' },
+        consent: true,
+        elapsedMs: 9000,
+      },
+    });
+    assert.equal(local.statusCode, 422, 'a local-format number has no country to resolve against');
+    assert.match(local.body, /country code/i);
+
+    await clearRateLimits(harness);
+    const international = await harness.app.inject({
+      method: 'POST',
+      url: `/v1/forms/contact/submissions?workspace=${other.workspaceSlug}`,
+      payload: {
+        values: { name: 'Neutral Person', phone: '+14155552671' },
+        consent: true,
+        elapsedMs: 9000,
+      },
+    });
+    assert.equal(international.statusCode, 201, international.body);
+
+    await other.drop();
+  });
+});

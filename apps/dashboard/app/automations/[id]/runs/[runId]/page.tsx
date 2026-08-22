@@ -128,7 +128,7 @@ export default async function AutomationRunPage({
   walk(run.definition?.steps);
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/automations">
+    <DashboardShell session={session} current="/automations">
       <div className="page-header">
         <div>
           <p className="breadcrumb">
@@ -216,7 +216,7 @@ export default async function AutomationRunPage({
                       )}
                     </td>
                     <td>
-                      {step.completedAt ?? step.startedAt ? (
+                      {(step.completedAt ?? step.startedAt) ? (
                         <RelativeTime iso={(step.completedAt ?? step.startedAt)!} />
                       ) : (
                         '—'

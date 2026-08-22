@@ -21,7 +21,7 @@ export default async function FormsPage() {
   }));
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/forms">
+    <DashboardShell session={session} current="/forms">
       <div className="page-header">
         <div>
           <h1>Forms</h1>

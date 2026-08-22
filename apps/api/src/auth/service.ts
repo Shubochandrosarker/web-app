@@ -59,6 +59,7 @@ export interface WorkspaceMembership {
   readonly workspaceId: string;
   readonly workspaceSlug: string;
   readonly workspaceName: string;
+  readonly businessType: string;
   readonly role: WorkspaceRole;
   readonly permissions: ReadonlySet<Permission>;
   readonly enabledModules: readonly string[];
@@ -650,6 +651,7 @@ export class AuthService {
           workspaceId: schema.workspaces.id,
           workspaceSlug: schema.workspaces.slug,
           workspaceName: schema.workspaces.name,
+          businessType: schema.workspaces.businessType,
           enabledModules: schema.workspaces.enabledModules,
           workspaceStatus: schema.workspaces.status,
         })
@@ -671,6 +673,7 @@ export class AuthService {
         workspaceId: row.workspaceId,
         workspaceSlug: row.workspaceSlug,
         workspaceName: row.workspaceName,
+        businessType: row.businessType,
         role,
         permissions: effectivePermissions(role, row.extraPermissions as string[]),
         enabledModules: row.enabledModules as string[],
@@ -687,6 +690,7 @@ export class AuthService {
           workspaceId: schema.workspaces.id,
           workspaceSlug: schema.workspaces.slug,
           workspaceName: schema.workspaces.name,
+          businessType: schema.workspaces.businessType,
           enabledModules: schema.workspaces.enabledModules,
         })
         .from(schema.workspaceMembers)
@@ -705,6 +709,7 @@ export class AuthService {
           workspaceId: row.workspaceId,
           workspaceSlug: row.workspaceSlug,
           workspaceName: row.workspaceName,
+          businessType: row.businessType,
           role,
           permissions: effectivePermissions(role, row.extraPermissions as string[]),
           enabledModules: row.enabledModules as string[],

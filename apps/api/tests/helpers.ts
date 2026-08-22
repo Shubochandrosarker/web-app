@@ -167,6 +167,9 @@ async function buildHarness(config: ApiConfig, db: Database, redis: RedisClient)
         timeZone: 'Asia/Dhaka',
         currency: 'BDT',
         enabledModules: [],
+        // What the provisioner writes from the tenant config; the forms
+        // tests exercise local-number normalisation through it.
+        metadata: { phoneCountryCode: '+880' },
         status: 'active',
       })
       .returning({ id: schema.workspaces.id });

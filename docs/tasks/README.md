@@ -38,8 +38,8 @@ rather than re-litigated per task.
 | **TASK-404** | ~~Private documents — UI and scanning~~ | 4     | 401        | ✅ done |
 | **TASK-501** | ~~Event outbox and dispatcher~~         | 5     | 402        | ✅ done |
 | **TASK-502** | ~~Email provider adapter and sending~~  | 5     | 401        | ✅ done |
-| TASK-503     | Automation engine                       | 5     | 501, 502   | 8       |
-| TASK-504     | Automation builder UI                   | 5     | 503, 107   | 6       |
+| **TASK-503** | ~~Automation engine~~                   | 5     | 501, 502   | ✅ done |
+| **TASK-504** | ~~Automation builder UI~~               | 5     | 503, 107   | ✅ done |
 | **TASK-505** | ~~WhatsApp — templates and inbound~~    | 5     | 502        | ✅ done |
 | **TASK-601** | ~~Analytics collection and ingestion~~  | 6     | 501        | ✅ done |
 | **TASK-602** | ~~Channel resolution and attribution~~  | 6     | 601, 402   | ✅ done |
@@ -59,10 +59,13 @@ a service page, submits a request, becomes a CRM lead with a confirmation, and
 staff work it from the dashboard — with authentication, RBAC, tenant isolation,
 sanitisation, a real CSP and a smoke test around it.
 
-Roughly 90 developer-days remain, unchanged in character: the automation
-builder, the analytics dashboard, the remaining CRM screens, and the second
-tenant. None of it blocks NuESheba going live, which was the point of picking
-this slice.
+What remains is the analytics dashboard and Search Console ingestion
+(TASK-603/604), the SEO intelligence layer (TASK-207/701/702), the WordPress
+adapter (TASK-210), the second tenant (TASK-801), and NuESheba's real content
+and configuration (TASK-301/302 — gated on owner facts recorded in
+[`docs/owner-input-required.md`](../owner-input-required.md)). None of the
+engineering items block the platform being deployable; the owner-fact items
+block the public NuESheba launch specifically.
 
 ## Detail
 

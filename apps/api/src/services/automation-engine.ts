@@ -651,10 +651,7 @@ export function createAutomationEngine(deps: AutomationEngineDeps) {
           .update(schema.automationRuns)
           .set(values)
           .where(
-            and(
-              eq(schema.automationRuns.id, run.id),
-              eq(schema.automationRuns.status, 'waiting'),
-            ),
+            and(eq(schema.automationRuns.id, run.id), eq(schema.automationRuns.status, 'waiting')),
           )
           .returning({ id: schema.automationRuns.id }),
       );
@@ -719,10 +716,7 @@ export function createAutomationEngine(deps: AutomationEngineDeps) {
           .update(schema.automationRuns)
           .set({ status: 'running', waitingForEvent: null, resumeAt: null, context })
           .where(
-            and(
-              eq(schema.automationRuns.id, run.id),
-              eq(schema.automationRuns.status, 'waiting'),
-            ),
+            and(eq(schema.automationRuns.id, run.id), eq(schema.automationRuns.status, 'waiting')),
           )
           .returning({ id: schema.automationRuns.id }),
       );
@@ -740,9 +734,7 @@ export function createAutomationEngine(deps: AutomationEngineDeps) {
       const [row] = await tx
         .select()
         .from(schema.automationRuns)
-        .where(
-          and(eq(schema.automationRuns.id, runId), eq(schema.automationRuns.status, 'failed')),
-        )
+        .where(and(eq(schema.automationRuns.id, runId), eq(schema.automationRuns.status, 'failed')))
         .limit(1);
       return row;
     });
@@ -820,12 +812,27 @@ async function executeAction(
       const body = renderContextTemplate(String(stepConfig.body ?? ''), context);
       if (!subject || !body) throw new Error('send_email needs a subject and a body.');
 
-      const reserved = await reserveAutomationMessage(db, run, 'email', idempotencyKey, to, subject, body);
+      const reserved = await reserveAutomationMessage(
+        db,
+        run,
+        'email',
+        idempotencyKey,
+        to,
+        subject,
+        body,
+      );
       if (!reserved) return { skipped: 'already sent' };
 
       try {
         const sent = await email.send({ to, subject, text: body });
-        await markAutomationMessage(db, workspaceId, reserved, 'sent', sent.providerMessageId, null);
+        await markAutomationMessage(
+          db,
+          workspaceId,
+          reserved,
+          'sent',
+          sent.providerMessageId,
+          null,
+        );
         return { sentTo: to, providerMessageId: sent.providerMessageId };
       } catch (error) {
         await markAutomationMessage(
@@ -877,7 +884,13 @@ async function executeAction(
       );
 
       const reserved = await reserveAutomationMessage(
-        db, run, 'whatsapp', idempotencyKey, to, null, body,
+        db,
+        run,
+        'whatsapp',
+        idempotencyKey,
+        to,
+        null,
+        body,
       );
       if (!reserved) return { skipped: 'already sent' };
 
@@ -888,7 +901,14 @@ async function executeAction(
           languageCode: template.locale === 'bn' ? 'bn' : 'en',
           variables,
         });
-        await markAutomationMessage(db, workspaceId, reserved, 'sent', sent.providerMessageId, null);
+        await markAutomationMessage(
+          db,
+          workspaceId,
+          reserved,
+          'sent',
+          sent.providerMessageId,
+          null,
+        );
         return { sentTo: to, providerMessageId: sent.providerMessageId };
       } catch (error) {
         await markAutomationMessage(
@@ -919,9 +939,7 @@ async function executeAction(
             workspaceId,
             title: title.slice(0, 300),
             status: 'open',
-            ...(dueInHours > 0
-              ? { dueAt: new Date(Date.now() + dueInHours * 3600 * 1000) }
-              : {}),
+            ...(dueInHours > 0 ? { dueAt: new Date(Date.now() + dueInHours * 3600 * 1000) } : {}),
             assignedToUserId,
             entityType: run.entityType,
             entityId: run.entityId,
@@ -993,7 +1011,11 @@ async function executeAction(
         if (!tagId && step.action === 'add_tag') {
           const [created] = await tx
             .insert(schema.tags)
-            .values({ workspaceId, name: tagName, slug: tagName.toLowerCase().replace(/\s+/g, '-') })
+            .values({
+              workspaceId,
+              name: tagName,
+              slug: tagName.toLowerCase().replace(/\s+/g, '-'),
+            })
             .onConflictDoNothing()
             .returning({ id: schema.tags.id });
           tagId = created?.id;
@@ -1067,7 +1089,15 @@ async function executeAction(
       );
       const body = renderContextTemplate(String(stepConfig.body ?? ''), context);
 
-      const reserved = await reserveAutomationMessage(db, run, 'email', idempotencyKey, to, subject, body);
+      const reserved = await reserveAutomationMessage(
+        db,
+        run,
+        'email',
+        idempotencyKey,
+        to,
+        subject,
+        body,
+      );
       if (!reserved) return { skipped: 'already sent' };
       const sent = await email.send({ to, subject, text: body });
       await markAutomationMessage(db, workspaceId, reserved, 'sent', sent.providerMessageId, null);

@@ -142,10 +142,7 @@ describe('enrollment and actions', () => {
 
     // The action really happened, with the template rendered from context.
     const tasks = await withoutTenantScope(harness.db, (tx) =>
-      tx
-        .select()
-        .from(schema.tasks)
-        .where(eq(schema.tasks.createdByAutomationId, automationId)),
+      tx.select().from(schema.tasks).where(eq(schema.tasks.createdByAutomationId, automationId)),
     );
     assert.equal(tasks.length, 1);
     assert.equal(tasks[0]!.title, 'Call Automation Person back');
@@ -203,9 +200,7 @@ describe('enrollment and actions', () => {
           type: 'branch',
           condition: {
             match: 'all',
-            predicates: [
-              { path: 'trigger.source', comparator: 'equals', value: 'website_form' },
-            ],
+            predicates: [{ path: 'trigger.source', comparator: 'equals', value: 'website_form' }],
           },
           then: [
             {
@@ -343,10 +338,7 @@ describe('failure, retry and the way back out', () => {
     assert.match(runs[0]!.failureReason ?? '', /not-yet-created/);
 
     const steps = await withoutTenantScope(harness.db, (tx) =>
-      tx
-        .select()
-        .from(schema.automationRunSteps)
-        .where(eq(schema.automationRunSteps.runId, runId)),
+      tx.select().from(schema.automationRunSteps).where(eq(schema.automationRunSteps.runId, runId)),
     );
     assert.equal(steps.length, 1, 'retries update the step row rather than duplicating it');
     assert.equal(steps[0]!.attempt, 2);
@@ -378,10 +370,7 @@ describe('failure, retry and the way back out', () => {
 
     // Exactly one message row, idempotent on the run and step.
     const messages = await withoutTenantScope(harness.db, (tx) =>
-      tx
-        .select()
-        .from(schema.messages)
-        .where(eq(schema.messages.automationRunId, runId)),
+      tx.select().from(schema.messages).where(eq(schema.messages.automationRunId, runId)),
     );
     assert.equal(messages.length, 1);
     assert.equal(messages[0]!.status, 'sent');

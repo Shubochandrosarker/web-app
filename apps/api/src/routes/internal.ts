@@ -10,10 +10,7 @@ import {
   createNotificationDispatcher,
   type LeadCreatedPayload,
 } from '../services/notifications.ts';
-import {
-  createAutomationEngine,
-  type AutomationEngine,
-} from '../services/automation-engine.ts';
+import { createAutomationEngine, type AutomationEngine } from '../services/automation-engine.ts';
 import { createRevalidator } from '../services/revalidation.ts';
 import type { EmailProvider, WhatsappProvider } from '../providers/notifications.ts';
 import type { AppContext } from '../app.ts';

@@ -51,7 +51,7 @@ export default async function AutomationsPage() {
   const canWrite = can(session, 'automations.write');
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/automations">
+    <DashboardShell session={session} current="/automations">
       <div className="page-header">
         <div>
           <h1>Automations</h1>
@@ -71,8 +71,8 @@ export default async function AutomationsPage() {
           <h2>Nothing automated yet</h2>
           <p className="muted">
             An automation reacts to something happening — a new enquiry, a form submission — and
-            works through steps you define: send a WhatsApp template, wait a day, create a task
-            for a colleague.
+            works through steps you define: send a WhatsApp template, wait a day, create a task for
+            a colleague.
           </p>
           {canWrite ? (
             <p>
@@ -115,7 +115,9 @@ export default async function AutomationsPage() {
                       : '—'}
                   </td>
                   <td>
-                    <span className={automation.enabled ? 'badge badge--won' : 'badge badge--muted'}>
+                    <span
+                      className={automation.enabled ? 'badge badge--won' : 'badge badge--muted'}
+                    >
                       {automation.enabled ? 'On' : 'Off'}
                     </span>
                   </td>

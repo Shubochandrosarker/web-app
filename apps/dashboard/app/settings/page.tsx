@@ -16,7 +16,7 @@ export default async function SettingsPage() {
   }).catch(() => ({ sessions: [] as SessionRow[] }));
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/settings">
+    <DashboardShell session={session} current="/settings">
       <div className="page-header">
         <div>
           <h1>Your account</h1>

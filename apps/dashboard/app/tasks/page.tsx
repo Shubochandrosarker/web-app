@@ -41,7 +41,7 @@ export default async function TasksPage({
   const { items } = await apiFetch<{ items: TaskRow[] }>(`/v1/crm/tasks?${view.query}`);
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/tasks">
+    <DashboardShell session={session} current="/tasks">
       <div className="page-header">
         <div>
           <h1>Tasks</h1>

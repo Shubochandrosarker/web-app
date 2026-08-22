@@ -143,6 +143,13 @@ async function main(): Promise<void> {
         currency: config.locale.currency,
         enabledModules: config.enabledModules,
         featureFlags: config.features,
+        // Tenant-specific behaviour knobs core code reads at runtime. The
+        // config is their single source; core carries no country defaults.
+        metadata: {
+          ...(config.locale.phoneCountryCode
+            ? { phoneCountryCode: config.locale.phoneCountryCode }
+            : {}),
+        },
         status: 'active' as const,
       };
 

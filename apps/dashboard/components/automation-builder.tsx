@@ -38,8 +38,20 @@ export type BuilderStep =
       retry: { maxAttempts: number; backoffSeconds: number };
     }
   | { id: string; type: 'wait'; seconds: number }
-  | { id: string; type: 'wait_for_event'; event: string; correlateOn: string; timeoutSeconds: number }
-  | { id: string; type: 'branch'; condition: BuilderCondition; then: BuilderStep[]; otherwise: BuilderStep[] };
+  | {
+      id: string;
+      type: 'wait_for_event';
+      event: string;
+      correlateOn: string;
+      timeoutSeconds: number;
+    }
+  | {
+      id: string;
+      type: 'branch';
+      condition: BuilderCondition;
+      then: BuilderStep[];
+      otherwise: BuilderStep[];
+    };
 
 export interface BuilderDefinition {
   name: string;
@@ -627,9 +639,7 @@ function stepSummary(step: BuilderStep, pickers: PickerData): string {
       const label =
         ACTION_OPTIONS.find((entry) => entry.value === step.action)?.label ?? step.action;
       if (step.action === 'send_whatsapp' && step.config.templateSlug) {
-        const template = pickers.templates.find(
-          (entry) => entry.slug === step.config.templateSlug,
-        );
+        const template = pickers.templates.find((entry) => entry.slug === step.config.templateSlug);
         return `${label}: ${template?.name ?? step.config.templateSlug}`;
       }
       if ((step.action === 'send_email' || step.action === 'notify_admin') && step.config.subject) {
@@ -1051,8 +1061,8 @@ export function AutomationBuilder({
           </button>
           {automationId ? (
             <p className="field-help">
-              Saving creates a new version. Sequences already in progress finish on the version
-              they started with.
+              Saving creates a new version. Sequences already in progress finish on the version they
+              started with.
             </p>
           ) : null}
         </div>

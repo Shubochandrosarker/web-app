@@ -76,7 +76,7 @@ export default async function LeadsPage({ searchParams }: PageProps) {
   const pipeline = pipelines.pipelines.find((entry) => entry.isDefault) ?? pipelines.pipelines[0];
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/leads">
+    <DashboardShell session={session} current="/leads">
       <div className="page-header">
         <div>
           <h1>Service requests</h1>

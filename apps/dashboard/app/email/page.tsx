@@ -17,7 +17,7 @@ export default async function EmailPage({
   const { status } = await searchParams;
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/email">
+    <DashboardShell session={session} current="/email">
       <ChannelMessages
         channel="email"
         title="Email"

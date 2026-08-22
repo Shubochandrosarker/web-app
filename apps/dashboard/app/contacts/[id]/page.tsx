@@ -55,7 +55,7 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
   const { contact } = detail;
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/contacts">
+    <DashboardShell session={session} current="/contacts">
       <div className="page-header">
         <div>
           <p className="breadcrumb">

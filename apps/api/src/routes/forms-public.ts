@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { schema, withWorkspace } from '@bos/database';
+import { schema, withWorkspace, withoutTenantScope } from '@bos/database';
 import { attribution as attributionSchema, phoneE164 } from '@bos/validation';
 import type { ResolvedFormField } from '@bos/content';
 import { ApiError } from '../lib/errors.ts';
@@ -130,6 +130,7 @@ function assessSpam(
 function validateAgainstDefinition(
   fields: readonly ResolvedFormField[],
   values: Record<string, string | boolean | number>,
+  phoneCountryCode: string | null,
 ): {
   clean: Record<string, string | boolean | number>;
   errors: { path: string; message: string }[];
@@ -170,7 +171,7 @@ function validateAgainstDefinition(
         break;
       }
       case 'tel': {
-        const normalised = normalisePhone(String(raw));
+        const normalised = normalisePhone(String(raw), phoneCountryCode);
         if (!normalised) {
           errors.push({
             path: field.name,
@@ -206,14 +207,16 @@ function validateAgainstDefinition(
 }
 
 /**
- * Normalise a Bangladeshi or international number to E.164.
+ * Normalise a locally-formatted or international number to E.164.
  *
- * Local habit is `01712345678`, and storing that alongside `+8801712345678`
- * would defeat the phone-based contact deduplication entirely. The `+880`
- * assumption is the tenant's country code and is applied only to a number that
- * looks like a local one.
+ * Local habit in many markets is to write numbers without the country code
+ * (`01712345678`), and storing that alongside `+8801712345678` would defeat
+ * the phone-based contact deduplication entirely. Which prefix a local
+ * number gets is the **tenant's** configuration (`locale.phoneCountryCode`
+ * in its business config), not a constant of the platform: a tenant with no
+ * code configured accepts only full international numbers.
  */
-function normalisePhone(raw: string, defaultCountryCode = '+880'): string | null {
+function normalisePhone(raw: string, defaultCountryCode: string | null): string | null {
   const digits = raw.replace(/[^\d+]/g, '');
 
   if (digits.startsWith('+')) {
@@ -223,6 +226,7 @@ function normalisePhone(raw: string, defaultCountryCode = '+880'): string | null
     const candidate = `+${digits.slice(2)}`;
     return phoneE164.safeParse(candidate).success ? candidate : null;
   }
+  if (!defaultCountryCode) return null;
   if (digits.startsWith('0')) {
     const candidate = `${defaultCountryCode}${digits.slice(1)}`;
     return phoneE164.safeParse(candidate).success ? candidate : null;
@@ -363,7 +367,23 @@ export function registerPublicFormRoutes(app: FastifyInstance, context: AppConte
         throw ApiError.badRequest('Please agree to be contacted before submitting.');
       }
 
-      const { clean, errors } = validateAgainstDefinition(definition, body.values);
+      // The tenant decides how local phone habits are normalised; the row is
+      // the platform's copy of its business config.
+      const phoneCountryCode = await withoutTenantScope(db, async (tx) => {
+        const [row] = await tx
+          .select({ metadata: schema.workspaces.metadata })
+          .from(schema.workspaces)
+          .where(eq(schema.workspaces.id, workspaceId))
+          .limit(1);
+        const meta = (row?.metadata ?? {}) as { phoneCountryCode?: unknown };
+        return typeof meta.phoneCountryCode === 'string' ? meta.phoneCountryCode : null;
+      });
+
+      const { clean, errors } = validateAgainstDefinition(
+        definition,
+        body.values,
+        phoneCountryCode,
+      );
       if (errors.length > 0) {
         throw new ApiError(
           422,

@@ -137,7 +137,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const { lead, contact } = detail;
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/leads">
+    <DashboardShell session={session} current="/leads">
       <div className="page-header">
         <div>
           <p className="breadcrumb">

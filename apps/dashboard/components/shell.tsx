@@ -23,20 +23,24 @@ import type { BusinessType, ModuleId } from '@bos/business-types';
  */
 export function DashboardShell({
   session,
-  businessType,
   current,
   children,
 }: {
   session: Session;
-  businessType: BusinessType;
   /** The nav item that should read as active, by href prefix. */
   current: string;
   children: ReactNode;
 }) {
   const workspace = session.workspace;
 
+  // The vocabulary follows the workspace the person is signed into — the
+  // same build serves an education service and a tour operator.
   const groups = workspace
-    ? buildNavigation(workspace.enabledModules as ModuleId[], businessType, workspace.permissions)
+    ? buildNavigation(
+        workspace.enabledModules as ModuleId[],
+        workspace.businessType as BusinessType,
+        workspace.permissions,
+      )
     : [];
 
   const initials = (session.user.fullName ?? session.user.email)
