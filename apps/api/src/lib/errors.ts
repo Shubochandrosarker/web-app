@@ -42,6 +42,10 @@ export class ApiError extends Error {
     return new ApiError(409, 'conflict', message);
   }
 
+  static tooManyRequests(message = 'Too many requests. Please try again later.'): ApiError {
+    return new ApiError(429, 'too_many_requests', message);
+  }
+
   /**
    * One message for every credential failure.
    *

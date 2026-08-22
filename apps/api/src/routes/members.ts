@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { schema, withWorkspace, withoutTenantScope } from '@bos/database';
 import { ApiError } from '../lib/errors.ts';
+import { consumeRateLimit } from '../lib/redis.ts';
 import { requirePermission, WORKSPACE_ROLES } from '../lib/permissions.ts';
 import { requestContext, requireUserId, requireWorkspace } from '../lib/context.ts';
 import type { AppContext } from '../app.ts';
@@ -113,6 +114,27 @@ export function registerMemberRoutes(
       const input = inviteInput.parse(request.body);
       const email = input.email.trim().toLowerCase();
 
+      // Inviting creates users and sends email — an abused admin session
+      // must not become a mail cannon or a user-table flood. Per actor and
+      // per workspace, because either alone can be the runaway dimension.
+      const rate = await consumeRateLimit(
+        context.redis,
+        `rl:invite:${workspace.workspaceId}:${actorId}`,
+        20,
+        3600,
+      );
+      if (!rate.allowed) {
+        return reply
+          .status(429)
+          .header('retry-after', String(rate.resetSeconds))
+          .send({
+            error: {
+              code: 'too_many_requests',
+              message: 'Too many invitations this hour. Please try again later.',
+            },
+          });
+      }
+
       const userId = await withoutTenantScope(db, async (tx) => {
         const [existing] = await tx
           .select({ id: schema.users.id })
@@ -177,6 +199,18 @@ export function registerMemberRoutes(
       const actorId = requireUserId(request);
       const { userId } = z.object({ userId: z.uuid() }).parse(request.params);
       const patch = memberPatch.parse(request.body);
+
+      // Role and status changes revoke sessions and rewrite authorization;
+      // a runaway client must be a 429, not a hundred audit entries.
+      const rate = await consumeRateLimit(
+        context.redis,
+        `rl:member-manage:${workspace.workspaceId}:${actorId}`,
+        60,
+        3600,
+      );
+      if (!rate.allowed) {
+        throw ApiError.tooManyRequests('Too many membership changes this hour.');
+      }
 
       const result = await withWorkspace(db, workspace.workspaceId, async (tx) => {
         const [member] = await tx
