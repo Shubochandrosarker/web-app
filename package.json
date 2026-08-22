@@ -26,11 +26,14 @@
     "workspace:seed-smoke": "node --experimental-strip-types scripts/seed-smoke.ts",
     "check:readiness": "node --experimental-strip-types scripts/check-readiness.ts",
     "redirects:import": "node --experimental-strip-types scripts/redirects.ts import",
-    "redirects:verify": "node --experimental-strip-types scripts/redirects.ts verify"
+    "redirects:verify": "node --experimental-strip-types scripts/redirects.ts verify",
+    "e2e": "playwright test"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9.39.0",
     "@next/eslint-plugin-next": "^16.3.2",
+    "@playwright/test": "^1.62.1",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.2",
     "eslint-plugin-react-hooks": "^7.1.1",

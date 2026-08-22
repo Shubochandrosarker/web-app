@@ -302,6 +302,9 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
         id: membership.workspaceId,
         slug: membership.workspaceSlug,
         name: membership.workspaceName,
+        // The dashboard's vocabulary (leads vs. bookings vs. enquiries)
+        // follows the workspace's business type, not a build-time constant.
+        businessType: membership.businessType,
         role: membership.role,
         // Sent so the dashboard can hide what the user cannot do. It is a UI
         // hint and nothing more — every route re-checks server-side.

@@ -182,11 +182,14 @@ export function ServiceRequestForm({ form, workspaceSlug, locale }: ServiceReque
       onSubmit={onSubmit}
       noValidate
       /*
-       * A real action and method, so the markup describes a working form even
-       * before hydration. The handler intercepts it when JavaScript is
-       * available.
+       * A real action and method, so the markup is a working form even before
+       * hydration — and with JavaScript disabled entirely. The native path
+       * posts to the site's own /forms/[slug]/submit route, which normalises
+       * the urlencoded body into the same JSON contract the API enforces and
+       * answers with a server-rendered confirmation page. The client handler
+       * intercepts when script is available.
        */
-      action={`${apiUrl}/v1/forms/${form.slug}/submissions?workspace=${workspaceSlug}`}
+      action={`/forms/${form.slug}/submit`}
       method="post"
     >
       {status.kind === 'error' ? (
@@ -238,6 +241,21 @@ export function ServiceRequestForm({ form, workspaceSlug, locale }: ServiceReque
           />
         </label>
       </div>
+
+      {/*
+        Metadata for the no-JavaScript path only: the native POST handler
+        needs to know which fields are checkboxes ("on" → boolean) and where
+        the visitor was. The scripted path reads none of these.
+      */}
+      <input
+        type="hidden"
+        name="_bos_checkboxes"
+        value={form.fields
+          .filter((field) => field.type === 'checkbox')
+          .map((field) => field.name)
+          .join(',')}
+      />
+      <input type="hidden" name="_bos_locale" value={locale} />
 
       {form.requiresConsent ? (
         <div className="field field--checkbox">

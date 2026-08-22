@@ -63,6 +63,13 @@ const config: NextConfig = {
 
   images: {
     formats: ['image/avif', 'image/webp'],
+    /**
+     * A custom loader instead of the built-in optimiser: variants come from
+     * Cloudflare Image Transformations at the edge (see lib/image-loader.ts),
+     * not from CPU on the application server.
+     */
+    loader: 'custom',
+    loaderFile: './lib/image-loader.ts',
   },
 
   /**

@@ -148,6 +148,7 @@ export interface SessionWorkspace {
   readonly id: string;
   readonly slug: string;
   readonly name: string;
+  readonly businessType: string;
   readonly role: string;
   readonly permissions: readonly string[];
   readonly enabledModules: readonly string[];

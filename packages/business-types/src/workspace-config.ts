@@ -65,6 +65,16 @@ export const localeSettingsSchema = z.object({
   supportedLocales: z.array(localeCode).min(1),
   timeZone,
   currency: currencyCode,
+  /**
+   * E.164 dialing prefix applied to locally-formatted phone numbers on this
+   * tenant's public forms (e.g. `+880` turns `01712…` into `+8801712…`).
+   * Without it, only full international numbers are accepted — core code
+   * carries no country assumption of its own.
+   */
+  phoneCountryCode: z
+    .string()
+    .regex(/^\+\d{1,4}$/)
+    .optional(),
 });
 
 export const workspaceConfigSchema = z

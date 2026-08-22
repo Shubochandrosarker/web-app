@@ -50,6 +50,11 @@ export const PERMISSIONS = [
   'analytics.read',
   'seo.read',
   'seo.write',
+  // Automation — read shows definitions and run history (which can include
+  // webhook configuration), write can send messages at scale; both sit above
+  // the day-to-day roles on purpose.
+  'automations.read',
+  'automations.write',
   // Administration
   'members.read',
   'members.invite',
@@ -109,6 +114,7 @@ const STAFF: readonly Permission[] = [
 const MANAGER: readonly Permission[] = [
   ...STAFF,
   'leads.assign',
+  'automations.read',
   'documents.download',
   'documents.write',
   'content.publish',
@@ -121,6 +127,7 @@ const MANAGER: readonly Permission[] = [
 
 const ADMIN: readonly Permission[] = [
   ...MANAGER,
+  'automations.write',
   'content.delete',
   'media.delete',
   'documents.delete',

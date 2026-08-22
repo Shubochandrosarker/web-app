@@ -80,7 +80,7 @@ export default async function FormBuilderPage({ params }: { params: Promise<{ id
   ).catch(() => ({ items: [] }));
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/forms">
+    <DashboardShell session={session} current="/forms">
       <div className="page-header">
         <div>
           <p className="breadcrumb">

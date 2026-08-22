@@ -27,6 +27,12 @@ export interface DispatcherOptions {
   readonly redis: RedisClient;
   readonly logger: FastifyBaseLogger;
   readonly handler: OutboxHandler;
+  /**
+   * Wakes automation runs whose sleep or retry backoff has come due, under
+   * the same lease as the outbox pass — the two are the same shape of work
+   * and a second polling loop would double the idle query load for nothing.
+   */
+  readonly resumeAutomations?: () => Promise<number>;
   /** How often to look for work. */
   readonly intervalMs?: number;
   readonly batchSize?: number;
@@ -65,6 +71,14 @@ export function createDispatcher(options: DispatcherOptions): Dispatcher {
       if (!leased) return;
 
       const result = await dispatchOutbox(options.db, options.handler, options.batchSize ?? 25);
+
+      if (options.resumeAutomations) {
+        const resumed = await options.resumeAutomations().catch((error: unknown) => {
+          options.logger.error({ err: error }, 'Automation resume pass failed');
+          return 0;
+        });
+        if (resumed > 0) options.logger.info({ resumed }, 'Automation runs resumed');
+      }
 
       if (result.claimed > 0) {
         options.logger.info({ ...result }, 'Outbox dispatched');

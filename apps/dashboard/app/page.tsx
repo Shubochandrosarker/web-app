@@ -87,7 +87,7 @@ export default async function IndexPage() {
   const weekDelta = overview.leadsThisWeek - overview.leadsPreviousWeek;
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/">
+    <DashboardShell session={session} current="/">
       <div className="page-header">
         <div>
           <h1>Today</h1>

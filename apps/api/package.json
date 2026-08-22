@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "provision": "node --experimental-strip-types scripts/provision.ts",
     "test": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts",
-    "check:deps": "node scripts/check-deps.mjs"
+    "check:deps": "node scripts/check-deps.mjs",
+    "scaffold-content": "node --experimental-strip-types scripts/scaffold-content.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1115.0",

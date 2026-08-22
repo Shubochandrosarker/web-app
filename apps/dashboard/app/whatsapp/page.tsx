@@ -17,7 +17,7 @@ export default async function WhatsappPage({
   const params = await searchParams;
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/whatsapp">
+    <DashboardShell session={session} current="/whatsapp">
       <ChannelMessages
         channel="whatsapp"
         title="WhatsApp"

@@ -44,6 +44,14 @@ curl -s https://staging.nuesheba.com | grep -o 'noindex' # present
 
 ## Stage 2 — Content and configuration
 
+- [ ] **The `Release gate` workflow (Actions → Release gate) is green.** It
+      re-runs everything CI verifies and then applies the gates that stay
+      advisory during development: the tenant-readiness check and the
+      high-severity dependency audit, with no `continue-on-error` anywhere.
+      A release that has not passed it does not ship.
+- [ ] **A restore drill has been executed and recorded**
+      (docs/operations/backup-restore.md). A backup nobody has restored from
+      is a hypothesis.
 - [ ] **`pnpm check:readiness nuesheba` exits zero.** This is a hard gate. It
       fails while the config carries a placeholder phone number, email or
       address, because those are published as the business's NAP in
@@ -200,18 +208,21 @@ Do not attempt to fix forward under traffic on the first day.
 
 ## What is deliberately not done at launch
 
-Stated here so nobody discovers it as a surprise:
+Stated here so nobody discovers it as a surprise. (This list is maintained;
+earlier revisions named gaps that have since been closed — the automation
+builder, the CRM screens and the per-field section editor all exist now.)
 
-- The **visual automation builder** is not built. The lead confirmation and
-  staff notification are hard-wired through the outbox, which is the flow
-  NuESheba actually needs.
-- The **analytics dashboard** is not built. Events are collected and rolled up
-  nightly; there is no screen reading them yet.
-- **Contacts, tasks, documents, services, forms and SEO** have API support but
-  no dashboard screens; their navigation entries are hidden rather than linking
-  to a page that does not exist.
-- The **section editor** edits props as JSON. Every save is schema-validated and
-  sanitised server-side, so it is safe — it is simply not yet the per-field
-  form that TASK-202 describes.
+- **Owner facts are placeholders** until supplied: real phone, WhatsApp,
+  email, address, opening hours, legal entity and disclaimer wording. See
+  [`docs/owner-input-required.md`](../owner-input-required.md) — the readiness
+  check fails while they remain.
+- The **old-site URL migration map** does not exist yet; building it needs
+  the owner's sitemap/Search Console/analytics exports (same document). Do
+  not cut DNS over without it.
+- **Services management, scheduling, orders, landing pages, reviews and
+  local-SEO screens** are pending; their navigation entries stay hidden
+  rather than linking to a page that does not exist.
+- **Search Console ingestion** requires the owner to grant property access
+  before its screen shows data.
 
 See the pull request's "Known limitations" for the complete list.

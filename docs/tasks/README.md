@@ -25,12 +25,12 @@ rather than re-litigated per task.
 | **TASK-204** | ~~Cache tags, publish invalidation~~    | 2     | 201        | ✅ done |
 | **TASK-205** | ~~Remaining section renderers~~         | 2     | 103        | ✅ done |
 | **TASK-206** | ~~Design system from brand tokens~~     | 2     | 205        | ✅ done |
-| TASK-207     | SEO entity graph and JSON-LD wiring     | 2     | 201        | 4       |
+| **TASK-207** | ~~SEO entity graph and JSON-LD wiring~~ | 2     | 201        | ✅ done |
 | **TASK-208** | ~~Sitemaps, redirects, IndexNow~~       | 2     | 201        | ✅ done |
 | **TASK-209** | ~~Form _builder_ UI~~                   | 2     | 201        | ✅ done |
-| TASK-210     | WordPress content adapter               | 2     | 201        | 4       |
-| TASK-301     | NuESheba config, branding, navigation   | 3     | 206        | 2       |
-| TASK-302     | NuESheba service pages and guides       | 3     | 205, 301   | 6       |
+| **TASK-210** | ~~WordPress content adapter~~           | 2     | 201        | ✅ done |
+| TASK-301     | NuESheba config, branding, navigation ◑ | 3     | 206        | 1       |
+| TASK-302     | NuESheba service pages and guides ◑     | 3     | 205, 301   | 4       |
 | **TASK-303** | ~~Service request form and upload~~     | 3     | 209, 404   | ✅ done |
 | **TASK-401** | ~~Contacts UI~~                         | 4     | 105        | ✅ done |
 | **TASK-402** | ~~Leads, pipeline, tasks, timeline~~    | 4     | 401        | ✅ done |
@@ -38,16 +38,16 @@ rather than re-litigated per task.
 | **TASK-404** | ~~Private documents — UI and scanning~~ | 4     | 401        | ✅ done |
 | **TASK-501** | ~~Event outbox and dispatcher~~         | 5     | 402        | ✅ done |
 | **TASK-502** | ~~Email provider adapter and sending~~  | 5     | 401        | ✅ done |
-| TASK-503     | Automation engine                       | 5     | 501, 502   | 8       |
-| TASK-504     | Automation builder UI                   | 5     | 503, 107   | 6       |
+| **TASK-503** | ~~Automation engine~~                   | 5     | 501, 502   | ✅ done |
+| **TASK-504** | ~~Automation builder UI~~               | 5     | 503, 107   | ✅ done |
 | **TASK-505** | ~~WhatsApp — templates and inbound~~    | 5     | 502        | ✅ done |
 | **TASK-601** | ~~Analytics collection and ingestion~~  | 6     | 501        | ✅ done |
 | **TASK-602** | ~~Channel resolution and attribution~~  | 6     | 601, 402   | ✅ done |
-| TASK-603     | Analytics dashboard                     | 6     | 602, 107   | 5       |
-| TASK-604     | Search Console ingestion                | 6     | 601        | 3       |
-| TASK-701     | SEO audit engine                        | 7     | 207, 604   | 6       |
-| TASK-702     | AI content suggestions                  | 7     | 701        | 5       |
-| TASK-801     | Second tenant extraction                | 8     | 603        | 5       |
+| **TASK-603** | ~~Analytics dashboard~~                 | 6     | 602, 107   | ✅ done |
+| **TASK-604** | ~~Search Console ingestion~~            | 6     | 601        | ✅ done |
+| **TASK-701** | ~~SEO audit engine~~                    | 7     | 207, 604   | ✅ done |
+| **TASK-702** | ~~AI content suggestions~~              | 7     | 701        | ✅ done |
+| **TASK-801** | ~~Second tenant extraction~~            | 8     | 603        | ✅ done |
 
 ◑ marks a task that is partly done: the mechanism exists and is tested, and
 what remains is a user interface for it. The estimate shown is what is left.
@@ -59,10 +59,13 @@ a service page, submits a request, becomes a CRM lead with a confirmation, and
 staff work it from the dashboard — with authentication, RBAC, tenant isolation,
 sanitisation, a real CSP and a smoke test around it.
 
-Roughly 90 developer-days remain, unchanged in character: the automation
-builder, the analytics dashboard, the remaining CRM screens, and the second
-tenant. None of it blocks NuESheba going live, which was the point of picking
-this slice.
+What remains is the analytics dashboard and Search Console ingestion
+(TASK-603/604), the SEO intelligence layer (TASK-207/701/702), the WordPress
+adapter (TASK-210), the second tenant (TASK-801), and NuESheba's real content
+and configuration (TASK-301/302 — gated on owner facts recorded in
+[`docs/owner-input-required.md`](../owner-input-required.md)). None of the
+engineering items block the platform being deployable; the owner-fact items
+block the public NuESheba launch specifically.
 
 ## Detail
 

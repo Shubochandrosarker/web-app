@@ -10,6 +10,7 @@ import {
   createNotificationDispatcher,
   type LeadCreatedPayload,
 } from '../services/notifications.ts';
+import { createAutomationEngine, type AutomationEngine } from '../services/automation-engine.ts';
 import { createRevalidator } from '../services/revalidation.ts';
 import type { EmailProvider, WhatsappProvider } from '../providers/notifications.ts';
 import type { AppContext } from '../app.ts';
@@ -131,6 +132,25 @@ function stripSensitiveProperties(properties: Record<string, unknown>): Record<s
 export interface InternalRouteDependencies {
   readonly email: EmailProvider;
   readonly whatsapp: WhatsappProvider;
+  readonly logger: {
+    info(payload: Record<string, unknown>, message: string): void;
+    warn(payload: Record<string, unknown>, message: string): void;
+    error(payload: Record<string, unknown>, message: string): void;
+  };
+}
+
+/** One engine per handler; stateless, so instances can coexist freely. */
+export function buildAutomationEngine(
+  context: AppContext,
+  deps: InternalRouteDependencies,
+): AutomationEngine {
+  return createAutomationEngine({
+    db: context.db,
+    config: context.config,
+    email: deps.email,
+    whatsapp: deps.whatsapp,
+    logger: deps.logger,
+  });
 }
 
 /**
@@ -143,6 +163,7 @@ export interface InternalRouteDependencies {
 export function createOutboxHandler(
   context: AppContext,
   deps: InternalRouteDependencies,
+  engine: AutomationEngine = buildAutomationEngine(context, deps),
 ): OutboxHandler {
   const notifications = createNotificationDispatcher({
     config: context.config,
@@ -153,6 +174,15 @@ export function createOutboxHandler(
   const revalidate = createRevalidator(context.config);
 
   return async (event) => {
+    /*
+     * Automations see every event, before the built-in reactions: enrollment
+     * starts new runs, and delivery wakes runs paused on a wait_for_event.
+     * Both are idempotent (dedupe key, claim-on-wake), so the outbox's
+     * at-least-once delivery is safe to point straight at them.
+     */
+    await engine.enrollFromEvent(event);
+    await engine.resumeWaitingForEvent(event);
+
     switch (event.name) {
       case 'lead.created':
         await notifications.handleLeadCreated(
@@ -200,7 +230,8 @@ export function registerInternalRoutes(
   deps: InternalRouteDependencies,
 ): void {
   const { db, config, resolveWorkspaceId } = context;
-  const outboxHandler = createOutboxHandler(context, deps);
+  const engine = buildAutomationEngine(context, deps);
+  const outboxHandler = createOutboxHandler(context, deps, engine);
 
   /* --------------------------------------------------------------- ingest */
 
@@ -308,6 +339,40 @@ export function registerInternalRoutes(
     { config: { bosAccess: internalRoute() } },
     async () => dispatchOutbox(db, outboxHandler),
   );
+
+  /**
+   * Wake automation runs whose sleep, retry backoff or wait-timeout is due.
+   *
+   * The in-process dispatcher does this every few seconds; the cron calls it
+   * too as the backstop that still runs when every instance's loop has died.
+   */
+  app.post(
+    '/v1/internal/jobs/automations.resume',
+    { config: { bosAccess: internalRoute() } },
+    async () => {
+      const resumed = await engine.resumeDueRuns();
+      return { resumed };
+    },
+  );
+
+  /**
+   * Pull the trailing Search Console window. A no-op (null) when the
+   * service-account credentials are not configured — the dashboard's search
+   * screen explains the setup instead.
+   */
+  app.post('/v1/internal/jobs/gsc.ingest', { config: { bosAccess: internalRoute() } }, async () => {
+    const { ingestSearchConsole } = await import('../services/search-console.ts');
+    const ingested = await ingestSearchConsole({
+      db,
+      config,
+      resolveWorkspaceId,
+      logger: app.log,
+    }).catch((error: unknown) => {
+      app.log.error({ err: error }, 'Search Console ingest failed');
+      return { error: String(error).slice(0, 500) } as Record<string, unknown>;
+    });
+    return { ingested };
+  });
 
   app.post(
     '/v1/internal/jobs/analytics.rollup',

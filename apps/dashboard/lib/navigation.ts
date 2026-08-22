@@ -68,7 +68,7 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
     label: 'Forms',
     permission: 'forms.read',
   },
-  'marketing.seo': { group: 'Content', href: '/seo', permission: 'seo.read', pending: true },
+  'marketing.seo': { group: 'Content', href: '/seo', label: 'SEO', permission: 'seo.read' },
   'ops.services': {
     group: 'Operations',
     href: '/services',
@@ -99,8 +99,8 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
   'ops.workflows': {
     group: 'Operations',
     href: '/automations',
-    permission: 'settings.read',
-    pending: true,
+    label: 'Automations',
+    permission: 'automations.read',
   },
   'comms.email': {
     group: 'Communications',
@@ -117,20 +117,20 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
   'analytics.traffic': {
     group: 'Analytics',
     href: '/analytics',
+    label: 'Traffic',
     permission: 'analytics.read',
-    pending: true,
   },
   'analytics.search': {
     group: 'Analytics',
     href: '/analytics/search',
+    label: 'Search',
     permission: 'analytics.read',
-    pending: true,
   },
   'analytics.conversion': {
     group: 'Analytics',
     href: '/analytics/conversion',
+    label: 'Conversions',
     permission: 'analytics.read',
-    pending: true,
   },
   'reputation.reviews': {
     group: 'Reputation',

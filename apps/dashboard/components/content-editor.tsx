@@ -61,6 +61,7 @@ export function ContentEditor({
   excerpt: initialExcerpt,
   document,
   status,
+  publishedAt,
   path,
   siteUrl,
   seo: initialSeo,
@@ -74,6 +75,7 @@ export function ContentEditor({
   excerpt: string;
   document: { sections: unknown[] };
   status: string;
+  publishedAt?: string | null;
   path: string;
   siteUrl: string;
   seo: SeoValue;
@@ -88,6 +90,14 @@ export function ContentEditor({
     (document.sections as StoredSection[]) ?? [],
   );
   const [seo, setSeo] = useState<SeoValue>(initialSeo);
+  const [scheduleAt, setScheduleAt] = useState<string>(() => {
+    if (!publishedAt) return '';
+    // Prefill with the existing schedule, in the input's local format.
+    const at = new Date(publishedAt);
+    if (Number.isNaN(at.getTime()) || at.getTime() <= Date.now()) return '';
+    const pad = (n: number): string => String(n).padStart(2, '0');
+    return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  });
   const [openSection, setOpenSection] = useState<string | null>(null);
   const [developerMode, setDeveloperMode] = useState(false);
   const [addPickerOpen, setAddPickerOpen] = useState(false);
@@ -204,7 +214,10 @@ export function ContentEditor({
 
   /* ------------------------------------------------------------ actions */
 
-  const changeStatus = (next: 'draft' | 'published' | 'archived'): void => {
+  const changeStatus = (
+    next: 'draft' | 'published' | 'scheduled' | 'archived',
+    publishAt?: string,
+  ): void => {
     startTransition(async () => {
       // Publish what is on screen, not what was last autosaved.
       if (dirty) {
@@ -216,7 +229,7 @@ export function ContentEditor({
         setDirty(false);
         setSavedAt(new Date());
       }
-      setResult(await setContentStatus(contentId, next));
+      setResult(await setContentStatus(contentId, next, publishAt));
     });
   };
 
@@ -569,14 +582,26 @@ export function ContentEditor({
                 Unpublish
               </button>
             ) : (
-              <button
-                type="button"
-                className="button"
-                disabled={pending}
-                onClick={() => changeStatus('published')}
-              >
-                Publish
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="button"
+                  disabled={pending}
+                  onClick={() => changeStatus('published')}
+                >
+                  Publish
+                </button>
+                {status === 'scheduled' ? (
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={pending}
+                    onClick={() => changeStatus('draft')}
+                  >
+                    Unschedule
+                  </button>
+                ) : null}
+              </>
             )
           ) : (
             <p className="muted">Your role can edit this page but not publish it.</p>
@@ -585,6 +610,38 @@ export function ContentEditor({
       ) : (
         <p className="muted">Your role can view this page but not change it.</p>
       )}
+
+      {canPublish && status !== 'published' ? (
+        <details className="panel schedule-panel">
+          <summary>
+            {status === 'scheduled' && publishedAt
+              ? `Scheduled — goes live ${new Date(publishedAt).toLocaleString()}`
+              : 'Schedule publication…'}
+          </summary>
+          <div className="field">
+            <label htmlFor="content-schedule-at">Publish automatically at</label>
+            <input
+              id="content-schedule-at"
+              type="datetime-local"
+              value={scheduleAt}
+              disabled={pending}
+              onChange={(event) => setScheduleAt(event.currentTarget.value)}
+            />
+            <p className="field-help">
+              Until then the page stays invisible to visitors; the platform publishes it on time
+              without anyone signing in.
+            </p>
+            <button
+              type="button"
+              className="button"
+              disabled={pending || !scheduleAt}
+              onClick={() => changeStatus('scheduled', new Date(scheduleAt).toISOString())}
+            >
+              {status === 'scheduled' ? 'Change the time' : 'Schedule'}
+            </button>
+          </div>
+        </details>
+      ) : null}
 
       {revisions.length > 0 ? (
         <details className="panel">

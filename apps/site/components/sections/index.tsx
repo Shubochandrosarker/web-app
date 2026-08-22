@@ -1,4 +1,5 @@
 import type { JSX, ReactNode } from 'react';
+import Image from 'next/image';
 import type { ParsedSection, SectionType } from '@bos/sections';
 import type {
   ResolvedForm,
@@ -140,25 +141,38 @@ function Media({
   if (!media) return null;
 
   /*
-   * A plain `<img>`, not `next/image`.
-   *
-   * Media is served from the tenant's own Cloudflare origin under
-   * content-addressed, immutable keys, already sized and already cached at the
-   * edge. Routing it through the Next optimiser would put image processing on
-   * the application server — the one Hostinger charges CPU for — to re-derive
-   * what the CDN is already serving. The two things `next/image` genuinely
-   * buys, explicit dimensions and lazy loading below the fold, are set here
-   * directly.
+   * `next/image` with a custom loader (lib/image-loader.ts): in production
+   * the loader rewrites to Cloudflare Image Transformations, so each device
+   * gets a width-appropriate AVIF/WebP variant derived at the edge — no image
+   * CPU on the application server. Dimensions come from upload verification
+   * and reserve layout before the bytes arrive.
+   */
+  if (media.width && media.height) {
+    return (
+      <Image
+        src={media.url}
+        alt={alt || media.alt || ''}
+        width={media.width}
+        height={media.height}
+        // The hero image is the LCP element on most pages, so it must not be
+        // lazy — a lazy LCP image is a guaranteed 2.5s+ score.
+        priority={priority}
+        {...(sizes ? { sizes } : {})}
+        {...(className ? { className } : {})}
+      />
+    );
+  }
+
+  /*
+   * No stored dimensions (media imported outside the upload path). Without
+   * width/height `next/image` cannot reserve space, so a plain `<img>` with
+   * lazy/priority hints is the honest fallback.
    */
   /* eslint-disable @next/next/no-img-element -- see the note above */
   return (
     <img
       src={media.url}
       alt={alt || media.alt || ''}
-      {...(media.width ? { width: media.width } : {})}
-      {...(media.height ? { height: media.height } : {})}
-      // The hero image is the LCP element on most pages, so it must not be
-      // lazy — a lazy LCP image is a guaranteed 2.5s+ score.
       loading={priority ? 'eager' : 'lazy'}
       fetchPriority={priority ? 'high' : 'auto'}
       decoding="async"

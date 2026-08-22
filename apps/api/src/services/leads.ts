@@ -203,6 +203,9 @@ async function captureLead(
       payload: {
         leadId,
         contactId,
+        // The catalog documents `source` on lead.created; automations branch
+        // on it. It mirrors the lead row's source.
+        source: 'website_form',
         submissionId: submission!.id,
         formId: input.formId,
         serviceId: input.serviceId,

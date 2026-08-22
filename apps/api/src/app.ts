@@ -22,10 +22,17 @@ import { registerCrmRoutes } from './routes/crm.ts';
 import { registerPublicFormRoutes } from './routes/forms-public.ts';
 import { registerFormAdminRoutes } from './routes/forms-admin.ts';
 import { registerCommunicationRoutes } from './routes/communications.ts';
+import { registerAutomationRoutes } from './routes/automations.ts';
+import { registerAnalyticsRoutes } from './routes/analytics.ts';
+import { registerSeoRoutes } from './routes/seo.ts';
 import { registerWhatsappWebhookRoutes } from './routes/webhooks-whatsapp.ts';
 import { registerMediaRoutes } from './routes/media.ts';
 import { registerDocumentRoutes } from './routes/documents.ts';
-import { createOutboxHandler, registerInternalRoutes } from './routes/internal.ts';
+import {
+  buildAutomationEngine,
+  createOutboxHandler,
+  registerInternalRoutes,
+} from './routes/internal.ts';
 import {
   createEmailProvider,
   createWhatsappProvider,
@@ -365,6 +372,12 @@ export function buildApp({
       registerCommunicationRoutes(instance, ctx);
     },
     'ops.documents': (instance, ctx) => registerDocumentRoutes(instance, ctx),
+    'analytics.traffic': (instance, ctx) => registerAnalyticsRoutes(instance, ctx),
+    'marketing.seo': (instance, ctx) => registerSeoRoutes(instance, ctx),
+    'ops.workflows': (instance, ctx) =>
+      registerAutomationRoutes(instance, ctx, {
+        engine: buildAutomationEngine(ctx, { email, whatsapp, logger: app.log }),
+      }),
   };
 
   const modules = enabledModules ?? (Object.keys(MODULE_ROUTES) as ModuleId[]);
@@ -378,7 +391,7 @@ export function buildApp({
   // Always mounted: the edge Worker's callbacks are infrastructure, not a
   // tenant capability, and a Worker whose ingest endpoint is missing retries
   // until its messages reach the dead-letter queue.
-  const internalDependencies = { email, whatsapp };
+  const internalDependencies = { email, whatsapp, logger: app.log };
   registerInternalRoutes(app, context, internalDependencies);
 
   // The WhatsApp webhook is infrastructure, like the internal routes: Meta
@@ -390,11 +403,13 @@ export function buildApp({
    * endpoint, so a confirmation email behaves identically whether it was sent
    * five seconds after the form was submitted or by the nightly sweep.
    */
+  const automationEngine = buildAutomationEngine(context, internalDependencies);
   const dispatcher = createDispatcher({
     db,
     redis,
     logger: app.log,
-    handler: createOutboxHandler(context, internalDependencies),
+    handler: createOutboxHandler(context, internalDependencies, automationEngine),
+    resumeAutomations: () => automationEngine.resumeDueRuns(),
   });
 
   for (const warning of warnings) app.log.warn({ warning }, 'Configuration warning');

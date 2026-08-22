@@ -48,7 +48,7 @@ export default async function ContentPage({
   );
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/content">
+    <DashboardShell session={session} current="/content">
       <div className="page-header">
         <div>
           <h1>Content</h1>

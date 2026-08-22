@@ -27,7 +27,7 @@ export default async function MediaPage({
   const storageConfigured = Boolean(process.env.NEXT_PUBLIC_MEDIA_ORIGIN);
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/media">
+    <DashboardShell session={session} current="/media">
       <div className="page-header">
         <div>
           <h1>Media</h1>

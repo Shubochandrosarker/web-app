@@ -31,7 +31,7 @@ export default async function DocumentsPage({
   ).catch(() => ({ items: [] as DocumentRow[] }));
 
   return (
-    <DashboardShell session={session} businessType="education_service" current="/documents">
+    <DashboardShell session={session} current="/documents">
       <div className="page-header">
         <div>
           <h1>Documents</h1>
