@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { apiFetch, can, getSession } from '@/lib/api';
 import { DashboardShell } from '@/components/shell';
 import { RelativeTime } from '@/components/relative-time';
+import { CloneAutomationButton, RetryRunButton } from '@/components/automation-controls';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +27,14 @@ interface AutomationRow {
   readonly updatedAt: string;
 }
 
+interface FailedRun {
+  readonly id: string;
+  readonly automationId: string;
+  readonly automationName: string;
+  readonly failureReason: string | null;
+  readonly startedAt: string;
+}
+
 const TRIGGER_LABELS: Record<string, string> = {
   'lead.created': 'When a new enquiry arrives',
   'form.submitted': 'When a form is submitted',
@@ -48,6 +57,9 @@ export default async function AutomationsPage() {
   const { items } = await apiFetch<{ items: AutomationRow[] }>('/v1/automations').catch(() => ({
     items: [] as AutomationRow[],
   }));
+  const { items: failedRuns } = await apiFetch<{ items: FailedRun[] }>(
+    '/v1/automations/runs?status=failed&limit=25',
+  ).catch(() => ({ items: [] as FailedRun[] }));
   const canWrite = can(session, 'automations.write');
 
   return (
@@ -93,6 +105,9 @@ export default async function AutomationsPage() {
                 <th scope="col">State</th>
                 <th scope="col">Runs</th>
                 <th scope="col">Last run</th>
+                <th scope="col">
+                  <span className="visually-hidden">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -112,7 +127,7 @@ export default async function AutomationsPage() {
                   <td>
                     {automation.triggerEvent
                       ? (TRIGGER_LABELS[automation.triggerEvent] ?? automation.triggerEvent)
-                      : '—'}
+                      : 'On a schedule'}
                   </td>
                   <td>
                     <span
@@ -138,12 +153,58 @@ export default async function AutomationsPage() {
                   <td>
                     {automation.lastRunAt ? <RelativeTime iso={automation.lastRunAt} /> : 'Never'}
                   </td>
+                  <td>
+                    {canWrite ? <CloneAutomationButton automationId={automation.id} /> : null}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      {failedRuns.length > 0 ? (
+        <section className="panel">
+          <h2>Failed runs</h2>
+          <p className="muted">
+            Each one is a sequence that stopped before finishing — a customer who did not get what
+            the automation promised. Replay after fixing the cause, or fix the definition.
+          </p>
+          <div className="table-scroll">
+            <table className="data-table">
+              <caption className="visually-hidden">Failed automation runs</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Automation</th>
+                  <th scope="col">Failed because</th>
+                  <th scope="col">Started</th>
+                  <th scope="col">
+                    <span className="visually-hidden">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {failedRuns.map((run) => (
+                  <tr key={run.id}>
+                    <th scope="row">
+                      <a href={`/automations/${run.automationId}`}>{run.automationName}</a>
+                    </th>
+                    <td>{run.failureReason ?? 'Unknown'}</td>
+                    <td>
+                      <RelativeTime iso={run.startedAt} />
+                    </td>
+                    <td>
+                      {canWrite ? (
+                        <RetryRunButton automationId={run.automationId} runId={run.id} />
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
     </DashboardShell>
   );
 }

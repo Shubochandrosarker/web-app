@@ -89,6 +89,13 @@ export const apiEnvSchema = z.object({
    */
   TURNSTILE_SITE_KEY: z.string().optional(),
   /**
+   * Ceiling on automation-driven sends (email + WhatsApp) per workspace per
+   * hour. A runaway loop or a mis-scoped trigger must never empty a send
+   * quota or spam a customer list; a step over the ceiling fails and retries
+   * later rather than sending.
+   */
+  AUTOMATION_HOURLY_SEND_LIMIT: z.coerce.number().int().min(1).max(100_000).default(200),
+  /**
    * Where token verification posts to. Only ever overridden by tests, which
    * point it at a local stub — production has no reason to change it.
    */

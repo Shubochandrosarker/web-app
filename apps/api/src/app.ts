@@ -422,6 +422,7 @@ export function buildApp({
     handler: createOutboxHandler(context, internalDependencies, automationEngine),
     resumeAutomations: () => automationEngine.resumeDueRuns(),
     dispatchReminders: () => dispatchDueReminders(db),
+    runSchedules: () => automationEngine.runDueSchedules(),
   });
 
   for (const warning of warnings) app.log.warn({ warning }, 'Configuration warning');

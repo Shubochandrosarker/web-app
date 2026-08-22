@@ -791,7 +791,10 @@ type BuilderStepInput =
 export interface BuilderDefinitionInput {
   name: string;
   description: string;
+  triggerKind: 'event' | 'schedule';
   triggerEvent: string;
+  /** Five-field cron, used when triggerKind is 'schedule'. */
+  triggerCron: string;
   condition: BuilderConditionInput | null;
   steps: BuilderStepInput[];
   reentry: 'once_per_contact' | 'once_per_entity' | 'always';
@@ -885,7 +888,10 @@ export async function saveAutomation(
   const body = {
     name: builder.name,
     ...(builder.description ? { description: builder.description } : {}),
-    trigger: { kind: 'event', event: builder.triggerEvent },
+    trigger:
+      builder.triggerKind === 'schedule'
+        ? { kind: 'schedule', cron: builder.triggerCron.trim() }
+        : { kind: 'event', event: builder.triggerEvent },
     ...(builder.condition && builder.condition.predicates.some((p) => p.path)
       ? { condition: apiCondition(builder.condition) }
       : {}),
@@ -917,6 +923,21 @@ export async function setAutomationEnabled(
     revalidatePath(`/automations/${automationId}`);
     revalidatePath('/automations');
     return { ok: true, message: enabled ? 'Automation turned on.' : 'Automation turned off.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function cloneAutomation(
+  automationId: string,
+): Promise<ActionResult & { id?: string }> {
+  try {
+    const created = await apiFetch<{ id: string }>(`/v1/automations/${automationId}/clone`, {
+      method: 'POST',
+      body: {},
+    });
+    revalidatePath('/automations');
+    return { ok: true, id: created.id, message: 'Cloned as a disabled draft.' };
   } catch (error) {
     return { ok: false, message: describe(error) };
   }

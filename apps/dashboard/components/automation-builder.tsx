@@ -56,7 +56,10 @@ export type BuilderStep =
 export interface BuilderDefinition {
   name: string;
   description: string;
+  triggerKind: 'event' | 'schedule';
   triggerEvent: string;
+  /** Five-field cron, used when triggerKind is 'schedule'. */
+  triggerCron: string;
   condition: BuilderCondition | null;
   steps: BuilderStep[];
   reentry: 'once_per_contact' | 'once_per_entity' | 'always';
@@ -87,6 +90,15 @@ const TRIGGER_OPTIONS: readonly { value: string; label: string }[] = [
   { value: 'task.completed', label: 'A task is completed' },
   { value: 'whatsapp.replied', label: 'The person replies on WhatsApp' },
   { value: 'appointment.created', label: 'An appointment is booked' },
+  { value: 'appointment.reminder_due', label: 'An appointment reminder falls due' },
+  { value: 'document.rejected', label: 'A document fails checks' },
+  { value: 'task.overdue', label: 'A task goes overdue' },
+  { value: 'order.created', label: 'An order is created' },
+  { value: 'order.completed', label: 'An order is completed' },
+  { value: 'order.cancelled', label: 'An order is cancelled' },
+  { value: 'payment.completed', label: 'A payment is verified' },
+  { value: 'review.requested', label: 'A review invitation falls due' },
+  { value: 'review.received', label: 'A review arrives' },
 ];
 
 const WAITABLE_EVENTS: readonly { value: string; label: string }[] = [
@@ -961,20 +973,51 @@ export function AutomationBuilder({
       <section className="panel">
         <h2>When</h2>
         <div className="field">
-          <label htmlFor="automation-trigger">Start when</label>
+          <label htmlFor="automation-trigger-kind">Starts</label>
           <select
-            id="automation-trigger"
-            value={definition.triggerEvent}
+            id="automation-trigger-kind"
+            value={definition.triggerKind}
             disabled={disabled}
-            onChange={(event) => update({ triggerEvent: event.currentTarget.value })}
+            onChange={(event) =>
+              update({ triggerKind: event.currentTarget.value as 'event' | 'schedule' })
+            }
           >
-            {TRIGGER_OPTIONS.map((entry) => (
-              <option key={entry.value} value={entry.value}>
-                {entry.label}
-              </option>
-            ))}
+            <option value="event">when something happens</option>
+            <option value="schedule">on a schedule</option>
           </select>
         </div>
+        {definition.triggerKind === 'event' ? (
+          <div className="field">
+            <label htmlFor="automation-trigger">Start when</label>
+            <select
+              id="automation-trigger"
+              value={definition.triggerEvent}
+              disabled={disabled}
+              onChange={(event) => update({ triggerEvent: event.currentTarget.value })}
+            >
+              {TRIGGER_OPTIONS.map((entry) => (
+                <option key={entry.value} value={entry.value}>
+                  {entry.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="field">
+            <label htmlFor="automation-cron">Schedule (five-field cron)</label>
+            <input
+              id="automation-cron"
+              value={definition.triggerCron}
+              disabled={disabled}
+              onChange={(event) => update({ triggerCron: event.currentTarget.value })}
+              placeholder="0 9 * * 1"
+            />
+            <p className="field-help">
+              Minute, hour, day, month, weekday — in the workspace time zone. "0 9 * * 1" is every
+              Monday at 09:00. Each matching minute starts one run.
+            </p>
+          </div>
+        )}
         <div className="field">
           <label htmlFor="automation-reentry">The same person</label>
           <select

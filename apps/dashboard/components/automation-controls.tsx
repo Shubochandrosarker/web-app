@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  cloneAutomation,
   deleteAutomation,
   retryAutomationRun,
   setAutomationEnabled,
@@ -105,6 +106,36 @@ export function RetryRunButton({
         }
       >
         {pending ? 'Retrying…' : 'Retry'}
+      </button>
+      {message ? (
+        <span className="field-error" role="alert">
+          {message}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+export function CloneAutomationButton({ automationId }: { readonly automationId: string }) {
+  const router = useRouter();
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <>
+      <button
+        type="button"
+        className="link-button"
+        disabled={pending}
+        onClick={() =>
+          startTransition(async () => {
+            const outcome = await cloneAutomation(automationId);
+            setMessage(outcome.ok ? null : (outcome.message ?? 'Clone failed.'));
+            if (outcome.ok && outcome.id) router.push(`/automations/${outcome.id}`);
+          })
+        }
+      >
+        {pending ? 'Cloning…' : 'Clone'}
       </button>
       {message ? (
         <span className="field-error" role="alert">

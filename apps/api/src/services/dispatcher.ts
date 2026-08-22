@@ -38,6 +38,11 @@ export interface DispatcherOptions {
    * lease and for the same reason as `resumeAutomations`.
    */
   readonly dispatchReminders?: () => Promise<number>;
+  /**
+   * Enrolls schedule-triggered automations whose cron matches the current
+   * minute. Idempotent per minute, so the five-second cadence is harmless.
+   */
+  readonly runSchedules?: () => Promise<number>;
   /** How often to look for work. */
   readonly intervalMs?: number;
   readonly batchSize?: number;
@@ -91,6 +96,14 @@ export function createDispatcher(options: DispatcherOptions): Dispatcher {
           return 0;
         });
         if (reminders > 0) options.logger.info({ reminders }, 'Appointment reminders dispatched');
+      }
+
+      if (options.runSchedules) {
+        const matched = await options.runSchedules().catch((error: unknown) => {
+          options.logger.error({ err: error }, 'Schedule sweep failed');
+          return 0;
+        });
+        if (matched > 0) options.logger.info({ matched }, 'Scheduled automations matched');
       }
 
       if (result.claimed > 0) {
