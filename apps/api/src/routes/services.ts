@@ -1,7 +1,7 @@
-import { and, asc, eq, ilike, isNull } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { schema, withWorkspace } from '@bos/database';
+import { schema, withWorkspace, type Database } from '@bos/database';
 import { ApiError } from '../lib/errors.ts';
 import { requirePermission } from '../lib/permissions.ts';
 import { requireWorkspace } from '../lib/context.ts';
@@ -56,6 +56,43 @@ function validatePricing(input: {
   }
   if (input.priceCurrency && (input.priceAmount === undefined || input.priceAmount === null)) {
     throw ApiError.badRequest('A numeric price is required when a currency is set.');
+  }
+}
+
+/**
+ * RLS hides other tenants' rows, but hiding is not validating: without this
+ * check a foreign category or location UUID would be *stored* — a dangling
+ * reference that renders as nothing and quietly survives every edit.
+ * Reference ids are proven to exist in this workspace before they are saved,
+ * the same philosophy the appointment routes apply.
+ */
+async function assertReferencesInWorkspace(
+  tx: Database,
+  input: {
+    categoryId?: string | null | undefined;
+    locationIds?: readonly string[] | undefined;
+  },
+): Promise<void> {
+  if (input.categoryId) {
+    const [category] = await tx
+      .select({ id: schema.serviceCategories.id })
+      .from(schema.serviceCategories)
+      .where(eq(schema.serviceCategories.id, input.categoryId))
+      .limit(1);
+    if (!category) {
+      throw ApiError.badRequest('Every linked record must belong to this workspace.');
+    }
+  }
+
+  if (input.locationIds && input.locationIds.length > 0) {
+    const unique = [...new Set(input.locationIds)];
+    const rows = await tx
+      .select({ id: schema.locations.id })
+      .from(schema.locations)
+      .where(and(inArray(schema.locations.id, unique), isNull(schema.locations.deletedAt)));
+    if (rows.length !== unique.length) {
+      throw ApiError.badRequest('Every linked record must belong to this workspace.');
+    }
   }
 }
 
@@ -154,6 +191,8 @@ export function registerServicesRoutes(app: FastifyInstance, context: AppContext
           .limit(1);
         if (existing) throw ApiError.conflict('A service with that slug already exists.');
 
+        await assertReferencesInWorkspace(tx, input);
+
         const [row] = await tx
           .insert(schema.services)
           .values({
@@ -205,6 +244,8 @@ export function registerServicesRoutes(app: FastifyInstance, context: AppContext
             .limit(1);
           if (existing) throw ApiError.conflict('A service with that slug already exists.');
         }
+
+        await assertReferencesInWorkspace(tx, input);
 
         const [row] = await tx
           .update(schema.services)

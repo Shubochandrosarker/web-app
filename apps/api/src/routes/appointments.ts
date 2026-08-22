@@ -99,56 +99,30 @@ async function assertAppointmentReferences(
     locationId?: string | null | undefined;
   },
 ): Promise<void> {
-  const [contact, lead, service, staff, location] = await Promise.all([
-    input.contactId
-      ? tx
-          .select({ id: schema.contacts.id })
-          .from(schema.contacts)
-          .where(and(eq(schema.contacts.id, input.contactId), isNull(schema.contacts.deletedAt)))
-          .limit(1)
-      : Promise.resolve([]),
-    input.leadId
-      ? tx
-          .select({ id: schema.leads.id })
-          .from(schema.leads)
-          .where(and(eq(schema.leads.id, input.leadId), isNull(schema.leads.deletedAt)))
-          .limit(1)
-      : Promise.resolve([]),
-    input.serviceId
-      ? tx
-          .select({ id: schema.services.id })
-          .from(schema.services)
-          .where(and(eq(schema.services.id, input.serviceId), isNull(schema.services.deletedAt)))
-          .limit(1)
-      : Promise.resolve([]),
-    input.staffProfileId
-      ? tx
-          .select({ id: schema.staffProfiles.id })
-          .from(schema.staffProfiles)
-          .where(
-            and(
-              eq(schema.staffProfiles.id, input.staffProfileId),
-              isNull(schema.staffProfiles.deletedAt),
-            ),
-          )
-          .limit(1)
-      : Promise.resolve([]),
-    input.locationId
-      ? tx
-          .select({ id: schema.locations.id })
-          .from(schema.locations)
-          .where(and(eq(schema.locations.id, input.locationId), isNull(schema.locations.deletedAt)))
-          .limit(1)
-      : Promise.resolve([]),
-  ]);
+  // Sequential on purpose: these run inside one transaction, and a single pg
+  // client cannot execute queries concurrently — Promise.all here relies on
+  // command queueing that node-postgres deprecates (removed in pg 9).
+  const lookups = [
+    { id: input.contactId, table: schema.contacts, deletedAt: schema.contacts.deletedAt },
+    { id: input.leadId, table: schema.leads, deletedAt: schema.leads.deletedAt },
+    { id: input.serviceId, table: schema.services, deletedAt: schema.services.deletedAt },
+    {
+      id: input.staffProfileId,
+      table: schema.staffProfiles,
+      deletedAt: schema.staffProfiles.deletedAt,
+    },
+    { id: input.locationId, table: schema.locations, deletedAt: schema.locations.deletedAt },
+  ] as const;
 
-  const invalid =
-    (input.contactId && contact.length === 0) ||
-    (input.leadId && lead.length === 0) ||
-    (input.serviceId && service.length === 0) ||
-    (input.staffProfileId && staff.length === 0) ||
-    (input.locationId && location.length === 0);
-  if (invalid) throw ApiError.badRequest('Every linked record must belong to this workspace.');
+  for (const lookup of lookups) {
+    if (!lookup.id) continue;
+    const [row] = await tx
+      .select({ id: lookup.table.id })
+      .from(lookup.table)
+      .where(and(eq(lookup.table.id, lookup.id), isNull(lookup.deletedAt)))
+      .limit(1);
+    if (!row) throw ApiError.badRequest('Every linked record must belong to this workspace.');
+  }
 }
 
 export function registerAppointmentRoutes(app: FastifyInstance, context: AppContext): void {
