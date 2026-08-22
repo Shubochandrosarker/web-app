@@ -600,6 +600,16 @@ export function createAutomationEngine(deps: AutomationEngineDeps) {
       waitingForEvent: null,
       failureReason: reason,
     });
+    // A dead-lettered run needs a person; tell the people who can fix it.
+    const { fanOutNotification } = await import('./notify.ts');
+    await fanOutNotification(db, run.workspaceId, {
+      kind: 'automation.failed',
+      severity: 'critical',
+      title: 'An automation run failed and needs review',
+      body: reason.slice(0, 300),
+      href: '/automations',
+      roles: ['owner', 'admin', 'manager'],
+    }).catch(() => undefined);
   }
 
   /* -------------------------------------------------------------- resuming */

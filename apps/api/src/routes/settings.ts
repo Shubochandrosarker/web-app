@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { desc, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, lte, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { schema, withWorkspace } from '@bos/database';
 import { ApiError } from '../lib/errors.ts';
 import { requirePermission } from '../lib/permissions.ts';
@@ -159,6 +160,64 @@ export function registerSettingsRoutes(app: FastifyInstance, context: AppContext
               : 'Connection failed.',
         };
       }
+    },
+  );
+}
+
+/**
+ * The audit trail, readable. Filters by action and time; rows carry who,
+ * what, when, from where. The detail JSON is what the writers stored —
+ * request context and before/after summaries, never tokens or secrets (the
+ * audit writers are reviewed on exactly that property).
+ */
+export function registerAuditRoutes(app: FastifyInstance, context: AppContext): void {
+  const { db } = context;
+
+  app.get(
+    '/v1/settings/audit',
+    { config: { bosAccess: requirePermission('audit.read') } },
+    async (request) => {
+      const workspace = requireWorkspace(request);
+      const query = z
+        .object({
+          action: z.string().max(120).optional(),
+          from: z.iso.datetime({ offset: true }).optional(),
+          to: z.iso.datetime({ offset: true }).optional(),
+          limit: z.coerce.number().int().min(1).max(200).default(50),
+        })
+        .parse(request.query);
+
+      return withWorkspace(db, workspace.workspaceId, async (tx) => {
+        const conditions = [];
+        if (query.action) conditions.push(ilike(schema.auditLog.action, `%${query.action}%`));
+        if (query.from) conditions.push(gte(schema.auditLog.createdAt, new Date(query.from)));
+        if (query.to) conditions.push(lte(schema.auditLog.createdAt, new Date(query.to)));
+
+        const rows = await tx
+          .select({
+            id: schema.auditLog.id,
+            action: schema.auditLog.action,
+            entityType: schema.auditLog.entityType,
+            entityId: schema.auditLog.entityId,
+            ipAddress: schema.auditLog.ipAddress,
+            detail: schema.auditLog.detail,
+            createdAt: schema.auditLog.createdAt,
+            actorEmail: schema.users.email,
+            actorName: schema.users.fullName,
+          })
+          .from(schema.auditLog)
+          .leftJoin(schema.users, eq(schema.users.id, schema.auditLog.actorUserId))
+          .where(conditions.length > 0 ? and(...conditions) : undefined)
+          .orderBy(desc(schema.auditLog.createdAt))
+          .limit(query.limit);
+
+        return {
+          items: rows.map((row) => ({
+            ...row,
+            createdAt: row.createdAt.toISOString(),
+          })),
+        };
+      });
     },
   );
 }

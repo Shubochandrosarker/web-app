@@ -22,7 +22,8 @@ import {
 export interface NavItem {
   readonly href: string;
   readonly label: string;
-  readonly moduleId: ModuleId;
+  /** Absent for core (non-module) screens like Team and the audit log. */
+  readonly moduleId?: ModuleId;
 }
 
 export interface NavGroup {
@@ -140,7 +141,24 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
   },
 };
 
-const GROUP_ORDER = ['CRM', 'Content', 'Operations', 'Communications', 'Analytics', 'Reputation'];
+const GROUP_ORDER = [
+  'CRM',
+  'Content',
+  'Operations',
+  'Communications',
+  'Analytics',
+  'Reputation',
+  'Workspace',
+];
+
+/**
+ * Screens every workspace has regardless of enabled modules — permission-
+ * gated like everything else, just not module-gated.
+ */
+const CORE_ITEMS: readonly { href: string; label: string; permission: string; group: string }[] = [
+  { href: '/team', label: 'Team', permission: 'members.read', group: 'Workspace' },
+  { href: '/settings/audit', label: 'Audit log', permission: 'audit.read', group: 'Workspace' },
+];
 
 export interface BuildNavigationOptions {
   /** Include screens that are scheduled but not built. Off by default. */
@@ -182,6 +200,13 @@ export function buildNavigation(
       items.push({ href: entry.href, label, moduleId });
       groups.set(entry.group, items);
     }
+  }
+
+  for (const core of CORE_ITEMS) {
+    if (!held.has(core.permission)) continue;
+    const items = groups.get(core.group) ?? [];
+    items.push({ href: core.href, label: core.label });
+    groups.set(core.group, items);
   }
 
   return GROUP_ORDER.filter((title) => groups.has(title)).map((title) => ({

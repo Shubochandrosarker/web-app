@@ -183,6 +183,12 @@ export function createOutboxHandler(
     await engine.enrollFromEvent(event);
     await engine.resumeWaitingForEvent(event);
 
+    // In-app notifications for the events a person should notice. Inserts
+    // are cheap and idempotence is not required: a redelivered event at
+    // worst repeats a heads-up, never an action.
+    const { notifyFromEvent } = await import('../services/notify.ts');
+    await notifyFromEvent(context.db, event).catch(() => undefined);
+
     switch (event.name) {
       case 'lead.created':
         await notifications.handleLeadCreated(

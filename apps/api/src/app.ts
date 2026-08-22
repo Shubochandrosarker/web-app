@@ -38,7 +38,10 @@ import {
   createOutboxHandler,
   registerInternalRoutes,
 } from './routes/internal.ts';
-import { registerSettingsRoutes } from './routes/settings.ts';
+import { registerAuditRoutes, registerSettingsRoutes } from './routes/settings.ts';
+import { registerSearchRoutes } from './routes/search.ts';
+import { registerNotificationRoutes } from './routes/notifications.ts';
+import { registerMemberRoutes } from './routes/members.ts';
 import {
   createEmailProvider,
   createWhatsappProvider,
@@ -346,6 +349,7 @@ export function buildApp({
 
   /* ------------------------------------------------------------- modules */
 
+  const { sendAuthEmail } = createNotificationDispatcher({ config, email, whatsapp, db });
   registerAuthRoutes(app, {
     auth,
     redis,
@@ -353,7 +357,7 @@ export function buildApp({
     isProduction: config.NODE_ENV === 'production',
     accessTokenTtl: config.AUTH_ACCESS_TOKEN_TTL,
     refreshTokenTtl: config.AUTH_REFRESH_TOKEN_TTL,
-    sendAuthEmail: createNotificationDispatcher({ config, email, whatsapp, db }).sendAuthEmail,
+    sendAuthEmail,
   });
 
   const MODULE_ROUTES: Partial<Record<ModuleId, ModuleRegistrar>> = {
@@ -406,9 +410,13 @@ export function buildApp({
   const internalDependencies = { email, whatsapp, logger: app.log };
   registerInternalRoutes(app, context, internalDependencies);
 
-  // Settings/integration status is likewise core, not a module: every
-  // workspace has a settings screen whatever it has enabled.
+  // Settings, search, notifications, team and the audit trail are likewise
+  // core, not modules: every workspace has them whatever it has enabled.
   registerSettingsRoutes(app, context);
+  registerAuditRoutes(app, context);
+  registerSearchRoutes(app, context);
+  registerNotificationRoutes(app, context);
+  registerMemberRoutes(app, context, { sendAuthEmail });
 
   // The WhatsApp webhook is infrastructure, like the internal routes: Meta
   // must be able to reach it whether or not any module is mounted.

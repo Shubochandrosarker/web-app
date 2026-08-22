@@ -1171,6 +1171,59 @@ export async function applySeoSuggestion(
   }
 }
 
+export async function inviteMember(input: {
+  readonly email: string;
+  readonly fullName: string;
+  readonly role: string;
+}): Promise<ActionResult> {
+  if (!input.email.trim() || !input.fullName.trim()) {
+    return { ok: false, message: 'An invitation needs a name and an email address.' };
+  }
+  try {
+    const result = await apiFetch<{ message: string }>('/v1/members/invite', {
+      method: 'POST',
+      body: { email: input.email.trim(), fullName: input.fullName.trim(), role: input.role },
+    });
+    revalidatePath('/team');
+    return { ok: true, message: result.message };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function updateMember(
+  userId: string,
+  patch: { readonly role?: string; readonly status?: 'active' | 'suspended' },
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/members/${userId}`, { method: 'PATCH', body: patch });
+    revalidatePath('/team');
+    return { ok: true, message: 'Member updated.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function markNotificationRead(id: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/notifications/${id}/read`, { method: 'POST', body: {} });
+    revalidatePath('/notifications');
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function markAllNotificationsRead(): Promise<ActionResult> {
+  try {
+    await apiFetch('/v1/notifications/read-all', { method: 'POST', body: {} });
+    revalidatePath('/notifications');
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
 export async function syncSearchConsole(): Promise<ActionResult> {
   try {
     const outcome = await apiFetch<{ ok: boolean; error?: string }>(

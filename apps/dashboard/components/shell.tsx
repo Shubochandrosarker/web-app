@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { signOut } from '@/lib/actions';
 import { buildNavigation } from '@/lib/navigation';
-import type { Session } from '@/lib/api';
+import { apiFetch, type Session } from '@/lib/api';
 import type { BusinessType, ModuleId } from '@bos/business-types';
 
 /**
@@ -21,7 +21,7 @@ import type { BusinessType, ModuleId } from '@bos/business-types';
  * client JavaScript, which for an operations tool means it works on a bad
  * connection in a queue outside a university office.
  */
-export function DashboardShell({
+export async function DashboardShell({
   session,
   current,
   children,
@@ -32,6 +32,14 @@ export function DashboardShell({
   children: ReactNode;
 }) {
   const workspace = session.workspace;
+
+  // The unread badge. One count query against the local API; a failure
+  // renders a bell with no number rather than an error.
+  const unread = workspace
+    ? await apiFetch<{ unreadCount: number }>('/v1/notifications?limit=1')
+        .then((response) => response.unreadCount)
+        .catch(() => 0)
+    : 0;
 
   // The vocabulary follows the workspace the person is signed into — the
   // same build serves an education service and a tour operator.
@@ -71,6 +79,33 @@ export function DashboardShell({
           <a href="/" className="shell-brand">
             {workspace?.name ?? 'Business OS'}
           </a>
+
+          {workspace ? (
+            <form className="shell-search" action="/search" method="get" role="search">
+              <label className="visually-hidden" htmlFor="global-search">
+                Search everything
+              </label>
+              <input
+                id="global-search"
+                name="q"
+                type="search"
+                placeholder="Search…"
+                minLength={2}
+                required
+              />
+            </form>
+          ) : null}
+
+          {workspace ? (
+            <a
+              className="shell-bell"
+              href="/notifications"
+              aria-label={`Notifications${unread > 0 ? ` (${unread} unread)` : ''}`}
+            >
+              <span aria-hidden="true">🔔</span>
+              {unread > 0 ? <span className="shell-bell-count">{unread}</span> : null}
+            </a>
+          ) : null}
 
           <details className="shell-account">
             <summary aria-label="Account">
