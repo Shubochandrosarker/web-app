@@ -1317,3 +1317,72 @@ fieldset.field > legend {
   padding-bottom: 0.9rem;
   margin-bottom: 0.9rem;
 }
+
+/* ------------------------------------------------------------ automations */
+
+.automation-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.duration-input {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.duration-input input {
+  width: 6rem;
+}
+
+.condition-editor {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.predicate-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.predicate-row input {
+  flex: 1 1 12rem;
+  min-width: 8rem;
+}
+
+.branch-side {
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.branch-side legend {
+  font-weight: 600;
+  padding: 0 0.35rem;
+}
+
+.step-list--nested {
+  border-left: 3px solid var(--color-border, #e5e7eb);
+  padding-left: 0.75rem;
+}
+
+.step-add {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
+.code-block {
+  background: var(--color-surface-muted, #f8fafc);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+  padding: 0.75rem;
+  overflow-x: auto;
+  font-size: 0.8rem;
+  max-height: 32rem;
+}

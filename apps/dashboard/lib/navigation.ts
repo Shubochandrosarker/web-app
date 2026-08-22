@@ -99,8 +99,8 @@ const NAV_MAP: Partial<Record<ModuleId, NavEntry | NavEntry[]>> = {
   'ops.workflows': {
     group: 'Operations',
     href: '/automations',
-    permission: 'settings.read',
-    pending: true,
+    label: 'Automations',
+    permission: 'automations.read',
   },
   'comms.email': {
     group: 'Communications',

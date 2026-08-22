@@ -16,6 +16,8 @@ const JOBS = [
   // Drains anything the in-process dispatcher missed — a confirmation whose
   // provider was down, an event written while the API was restarting.
   'outbox.dispatch',
+  // Same backstop for automation runs sleeping past every instance's loop.
+  'automations.resume',
   'analytics.rollup',
   'documents.retention_sweep',
   // Publishes content whose scheduled time has passed.

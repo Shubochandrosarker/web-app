@@ -599,6 +599,200 @@ export async function saveForm(
   }
 }
 
+/* ------------------------------------------------------------ automations */
+
+interface BuilderPredicateInput {
+  path: string;
+  comparator: string;
+  value: string;
+}
+
+interface BuilderConditionInput {
+  match: 'all' | 'any';
+  predicates: BuilderPredicateInput[];
+}
+
+type BuilderStepInput =
+  | {
+      id: string;
+      type: 'action';
+      action: string;
+      config: Record<string, string>;
+      retry: { maxAttempts: number; backoffSeconds: number };
+    }
+  | { id: string; type: 'wait'; seconds: number }
+  | {
+      id: string;
+      type: 'wait_for_event';
+      event: string;
+      correlateOn: string;
+      timeoutSeconds: number;
+    }
+  | {
+      id: string;
+      type: 'branch';
+      condition: BuilderConditionInput;
+      then: BuilderStepInput[];
+      otherwise: BuilderStepInput[];
+    };
+
+export interface BuilderDefinitionInput {
+  name: string;
+  description: string;
+  triggerEvent: string;
+  condition: BuilderConditionInput | null;
+  steps: BuilderStepInput[];
+  reentry: 'once_per_contact' | 'once_per_entity' | 'always';
+}
+
+function apiCondition(condition: BuilderConditionInput): Record<string, unknown> {
+  return {
+    match: condition.match,
+    predicates: condition.predicates.map((predicate) => ({
+      path: predicate.path,
+      comparator: predicate.comparator,
+      // is_set / is_not_set take no value; sending one would be noise.
+      ...(predicate.comparator === 'is_set' || predicate.comparator === 'is_not_set'
+        ? {}
+        : { value: predicate.value }),
+    })),
+  };
+}
+
+/** Translate a builder step into the definition language the API stores. */
+function apiStep(step: BuilderStepInput): Record<string, unknown> {
+  switch (step.type) {
+    case 'wait':
+      return { id: step.id, type: 'wait', seconds: step.seconds };
+    case 'wait_for_event':
+      return {
+        id: step.id,
+        type: 'wait_for_event',
+        event: step.event,
+        correlateOn: step.correlateOn,
+        timeoutSeconds: step.timeoutSeconds,
+      };
+    case 'branch':
+      return {
+        id: step.id,
+        type: 'branch',
+        condition: apiCondition(step.condition),
+        then: step.then.map(apiStep),
+        otherwise: step.otherwise.map(apiStep),
+      };
+    case 'action': {
+      const raw = step.config;
+      let config: Record<string, unknown>;
+      switch (step.action) {
+        case 'send_whatsapp': {
+          // The builder stores variable1..variableN; the engine wants an array.
+          const indexes = Object.keys(raw)
+            .map((key) => /^variable(\d+)$/.exec(key)?.[1])
+            .filter((index): index is string => index !== undefined)
+            .map(Number);
+          const count = indexes.length > 0 ? Math.max(...indexes) : 0;
+          config = {
+            templateSlug: raw.templateSlug ?? '',
+            variables: Array.from({ length: count }, (_, i) => raw[`variable${i + 1}`] ?? ''),
+          };
+          break;
+        }
+        case 'send_email':
+        case 'notify_admin':
+          config = {
+            ...(raw.to ? { to: raw.to } : {}),
+            subject: raw.subject ?? '',
+            body: raw.body ?? '',
+          };
+          break;
+        case 'create_task':
+          config = {
+            title: raw.title ?? '',
+            ...(raw.dueInHours ? { dueInHours: Number(raw.dueInHours) || 0 } : {}),
+            ...(raw.assignedToUserId ? { assignedToUserId: raw.assignedToUserId } : {}),
+          };
+          break;
+        case 'update_lead':
+          config = {
+            ...(raw.stageId ? { stageId: raw.stageId } : {}),
+            ...(raw.status ? { status: raw.status } : {}),
+          };
+          break;
+        default:
+          config = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== ''));
+      }
+      return { id: step.id, type: 'action', action: step.action, config, retry: step.retry };
+    }
+  }
+}
+
+export async function saveAutomation(
+  automationId: string | null,
+  builder: BuilderDefinitionInput,
+): Promise<ActionResult & { id?: string }> {
+  const body = {
+    name: builder.name,
+    ...(builder.description ? { description: builder.description } : {}),
+    trigger: { kind: 'event', event: builder.triggerEvent },
+    ...(builder.condition && builder.condition.predicates.some((p) => p.path)
+      ? { condition: apiCondition(builder.condition) }
+      : {}),
+    steps: builder.steps.map(apiStep),
+    reentry: builder.reentry,
+  };
+
+  try {
+    if (automationId) {
+      await apiFetch(`/v1/automations/${automationId}`, { method: 'PUT', body });
+      revalidatePath(`/automations/${automationId}`);
+      revalidatePath('/automations');
+      return { ok: true, id: automationId, message: 'Automation saved as a new version.' };
+    }
+    const created = await apiFetch<{ id: string }>('/v1/automations', { method: 'POST', body });
+    revalidatePath('/automations');
+    return { ok: true, id: created.id, message: 'Automation created. Turn it on when ready.' };
+  } catch (error) {
+    return { ok: false, message: describe(error), ...fieldErrorsFrom(error) };
+  }
+}
+
+export async function setAutomationEnabled(
+  automationId: string,
+  enabled: boolean,
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/automations/${automationId}`, { method: 'PATCH', body: { enabled } });
+    revalidatePath(`/automations/${automationId}`);
+    revalidatePath('/automations');
+    return { ok: true, message: enabled ? 'Automation turned on.' : 'Automation turned off.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function deleteAutomation(automationId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/automations/${automationId}`, { method: 'DELETE' });
+    revalidatePath('/automations');
+    return { ok: true, message: 'Automation deleted.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function retryAutomationRun(
+  automationId: string,
+  runId: string,
+): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/automations/runs/${runId}/retry`, { method: 'POST', body: {} });
+    revalidatePath(`/automations/${automationId}`);
+    return { ok: true, message: 'Run resumed from the failed step.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
 function describe(error: unknown): string {
   if (error instanceof ApiRequestError) {
     if (error.isUnauthenticated) return 'Your session has expired. Please sign in again.';
