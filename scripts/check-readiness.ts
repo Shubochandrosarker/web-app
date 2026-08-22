@@ -4,94 +4,110 @@ import {
   checkProductionReadiness,
   formatReadinessReport,
   resolveWorkspaceConfig,
-  selectReadinessTenants,
+  selectReleaseTargets,
   workspaceConfigSchema,
+  type ReleaseTenant,
+  type WorkspaceConfig,
 } from '@bos/business-types';
 
 /**
  * The launch gate for tenant configuration.
  *
- * Run in CI and before a production deploy:
+ *   pnpm check:readiness                      # sweep: gate eligible tenants,
+ *                                             # report fixtures informationally
+ *   pnpm check:readiness nuesheba             # release check for one tenant
+ *   pnpm check:readiness --release-eligible   # platform release: every
+ *                                             # tenant marked eligible
  *
- *   pnpm check:readiness                    # every config, including fixtures
- *   pnpm check:readiness nuesheba           # one explicit tenant
- *   pnpm check:readiness --release-eligible # opted-in production tenants
+ * Which tenants *gate* the run is decided by `environment.releaseEligible`
+ * in each business.json (see @bos/business-types selectReleaseTargets):
+ * fixture tenants like `demo-consultancy` carry deliberate placeholder
+ * values and must never block a real release, while naming a tenant that is
+ * unknown or not marked eligible is a loud failure, never a skip.
  *
- * Exits non-zero when any workspace has a blocker, which is what stops a
- * placeholder phone number reaching structured data. Release-eligible mode
- * intentionally excludes demo/fixture tenants; the release workflow names
- * `nuesheba` explicitly so a real production tenant cannot be skipped.
+ * Exits non-zero when any gated tenant has a blocker. Warnings are printed
+ * and do not fail — they are things to fix, not things that must not ship.
  */
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const releaseEligibleOnly = args.includes('--release-eligible');
   const requested = args.filter((arg) => !arg.startsWith('--'));
-  if (requested.length > 1) {
-    throw new Error('Pass at most one tenant slug, or use --release-eligible.');
-  }
-
+  const releaseEligibleOnly = args.includes('--release-eligible');
   const configsDir = resolve(process.cwd(), 'configs');
-  const tenantDirectories = (await readdir(configsDir, { withFileTypes: true }))
+
+  const slugs = (await readdir(configsDir, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
-  const entries = await Promise.all(
-    tenantDirectories.map(async (slug) => {
-      const path = resolve(configsDir, slug, 'business.json');
-      const raw = await readFile(path, 'utf8').catch(() => null);
-      let json: unknown;
-      try {
-        json = raw === null ? undefined : JSON.parse(raw);
-      } catch {
-        json = undefined;
-      }
-      const parsed = workspaceConfigSchema.safeParse(json);
-      return {
-        slug,
-        path,
-        raw,
-        parsed,
-        releaseEligible: parsed.success && parsed.data.environment.releaseEligible === true,
-      };
-    }),
-  );
 
-  const slugs = selectReadinessTenants(entries, requested[0], releaseEligibleOnly);
+  // Parse every config once; a config that does not parse cannot declare its
+  // eligibility, which for a *named* tenant must fail rather than skip.
+  const parsedBySlug = new Map<string, WorkspaceConfig>();
+  const parseErrors: string[] = [];
+  for (const slug of slugs) {
+    const path = resolve(configsDir, slug, 'business.json');
+    const raw = await readFile(path, 'utf8').catch(() => null);
+    if (raw === null) {
+      parseErrors.push(`No configuration at ${path}`);
+      continue;
+    }
+    const parsed = workspaceConfigSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) {
+      parseErrors.push(
+        `Invalid configuration for "${slug}": ` +
+          parsed.error.issues
+            .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+            .join('; '),
+      );
+      continue;
+    }
+    parsedBySlug.set(slug, parsed.data);
+  }
+
+  const tenants: ReleaseTenant[] = [...parsedBySlug.entries()].map(([slug, config]) => ({
+    slug,
+    releaseEligible: config.environment.releaseEligible,
+  }));
+
+  const selection = selectReleaseTargets(tenants, requested, releaseEligibleOnly);
+
+  for (const error of [...parseErrors, ...selection.errors]) {
+    console.error(`ERROR: ${error}`);
+  }
 
   let blockers = 0;
 
-  for (const slug of slugs) {
-    const entry = entries.find((candidate) => candidate.slug === slug);
-    if (!entry || entry.raw === null) {
-      console.error(
-        `No configuration at ${entry?.path ?? resolve(configsDir, slug, 'business.json')}`,
-      );
-      blockers += 1;
-      continue;
-    }
-
-    if (!entry.parsed.success) {
-      // A config that does not even parse is a blocker of its own.
-      console.error(`Invalid configuration for "${slug}":`);
-      for (const issue of entry.parsed.error.issues) {
-        console.error(`  - ${issue.path.join('.')}: ${issue.message}`);
-      }
-      blockers += 1;
-      continue;
-    }
-
-    const report = checkProductionReadiness(resolveWorkspaceConfig(entry.parsed.data));
+  for (const slug of selection.targets) {
+    const report = checkProductionReadiness(resolveWorkspaceConfig(parsedBySlug.get(slug)!));
     console.log(formatReadinessReport(report, slug));
     console.log('');
     blockers += report.blockers;
   }
 
+  for (const slug of selection.informational) {
+    const report = checkProductionReadiness(resolveWorkspaceConfig(parsedBySlug.get(slug)!));
+    console.log(
+      `Fixture tenant — ${slug} (not release-eligible; reported for information, never gates)`,
+    );
+    console.log(
+      `  ${report.blockers} blocker(s), ${report.warnings} warning(s) — expected for a fixture.`,
+    );
+    console.log('');
+  }
+
+  if (selection.errors.length > 0 || parseErrors.length > 0) {
+    process.exit(1);
+  }
+
   if (blockers > 0) {
     console.error(
-      `\n${blockers} blocker(s) across ${slugs.length} selected workspace(s). ` +
-        'These values would be published as fact — fill them in from the business, ' +
-        'never by guessing.',
+      `\n${blockers} blocker(s) across ${selection.targets.length} release-eligible ` +
+        'workspace(s). These values would be published as fact — fill them in from ' +
+        'the business, never by guessing.',
     );
     process.exit(1);
+  }
+
+  if (selection.targets.length > 0) {
+    console.log(`Release-eligible tenant(s) ready: ${selection.targets.join(', ')}`);
   }
 }
 

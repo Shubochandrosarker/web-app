@@ -122,6 +122,14 @@ export function checkProductionReadiness(config: ResolvedWorkspaceConfig): Readi
     );
   }
 
+  if (config.features.whatsappAcknowledgement === true && !nap.whatsapp) {
+    blocker(
+      'nap.whatsapp',
+      'WhatsApp acknowledgements are enabled but no WhatsApp number is configured.',
+      'Set nap.whatsapp, or turn features.whatsappAcknowledgement off explicitly.',
+    );
+  }
+
   if (looksLikePlaceholder(nap.email)) {
     blocker(
       'nap.email',
@@ -210,6 +218,14 @@ export function checkProductionReadiness(config: ResolvedWorkspaceConfig): Readi
 
   /* ------------------------------------------------------------------ URL */
 
+  if (looksLikePlaceholder(siteUrl)) {
+    blocker(
+      'siteUrl',
+      `The site URL "${siteUrl}" looks like a fixture domain.`,
+      'Set the real production origin. Canonicals, sitemaps and structured data are built from it.',
+    );
+  }
+
   if (siteUrl.startsWith('http://')) {
     blocker(
       'siteUrl',
@@ -231,17 +247,30 @@ export function checkProductionReadiness(config: ResolvedWorkspaceConfig): Readi
 
   /*
    * An education service that helps people obtain documents from a university
-   * must not be mistakable for that university. This is a warning rather than
-   * a blocker because whether it is *required* depends on the business — but
-   * for this business type it very nearly always is.
+   * must not be mistakable for that university. For this business type the
+   * disclaimer is a launch blocker, not a nicety: publishing without it is a
+   * legal-identity risk the platform must not take on the owner's behalf.
+   * The wording itself is the owner's — the gate only requires that it exists.
    */
   if (config.businessType === 'education_service' && !legal.independenceDisclaimer) {
-    warning(
+    blocker(
       'legal.independenceDisclaimer',
       'No independence disclaimer, on a business type that assists with an ' +
         "institution's documents.",
       'State plainly that the business is an independent service provider and not ' +
         'affiliated with the institution. It goes in the footer of every page.',
+    );
+  }
+
+  /*
+   * A business that invites people to upload personal documents owes them a
+   * privacy/data-handling policy before it goes live.
+   */
+  if (config.features.documentUpload === true && !legal.privacyPolicyPath) {
+    blocker(
+      'legal.privacyPolicyPath',
+      'Document upload is enabled but no privacy/data-handling policy page is configured.',
+      'Publish the policy page and set legal.privacyPolicyPath to its path.',
     );
   }
 
