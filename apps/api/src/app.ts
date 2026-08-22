@@ -38,6 +38,7 @@ import {
   createOutboxHandler,
   registerInternalRoutes,
 } from './routes/internal.ts';
+import { registerSettingsRoutes } from './routes/settings.ts';
 import {
   createEmailProvider,
   createWhatsappProvider,
@@ -404,6 +405,10 @@ export function buildApp({
   // until its messages reach the dead-letter queue.
   const internalDependencies = { email, whatsapp, logger: app.log };
   registerInternalRoutes(app, context, internalDependencies);
+
+  // Settings/integration status is likewise core, not a module: every
+  // workspace has a settings screen whatever it has enabled.
+  registerSettingsRoutes(app, context);
 
   // The WhatsApp webhook is infrastructure, like the internal routes: Meta
   // must be able to reach it whether or not any module is mounted.

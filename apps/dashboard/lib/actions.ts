@@ -1126,6 +1126,82 @@ export async function cancelAppointment(
   }
 }
 
+/**
+ * Apply an AI meta suggestion into the page's SEO fields — an explicit,
+ * per-field human decision, never automatic. The PATCH replaces the whole
+ * seo object, so current values are fetched and merged first: applying a
+ * title must not erase the description.
+ */
+export async function applySeoSuggestion(
+  contentId: string,
+  patch: { readonly title?: string | undefined; readonly description?: string | undefined },
+): Promise<ActionResult> {
+  try {
+    const current = await apiFetch<{
+      seo: {
+        title: string | null;
+        description: string | null;
+        canonicalUrl: string | null;
+        noindex: boolean;
+        nofollow: boolean;
+        ogImageMediaId: string | null;
+      } | null;
+    }>(`/v1/cms/content/${contentId}`);
+
+    const seo = current.seo;
+    await apiFetch(`/v1/cms/content/${contentId}`, {
+      method: 'PATCH',
+      body: {
+        seo: {
+          title: (patch.title ?? seo?.title ?? undefined)?.slice(0, 70) || undefined,
+          description:
+            (patch.description ?? seo?.description ?? undefined)?.slice(0, 180) || undefined,
+          canonicalUrl: seo?.canonicalUrl ?? undefined,
+          noindex: seo?.noindex ?? false,
+          nofollow: seo?.nofollow ?? false,
+          ogImageMediaId: seo?.ogImageMediaId ?? undefined,
+        },
+      },
+    });
+    revalidatePath('/seo');
+    revalidatePath(`/content/${contentId}`);
+    return { ok: true, message: 'Applied to the page. Republish for it to go live.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function syncSearchConsole(): Promise<ActionResult> {
+  try {
+    const outcome = await apiFetch<{ ok: boolean; error?: string }>(
+      '/v1/settings/search-console/sync',
+      { method: 'POST', body: {} },
+    );
+    revalidatePath('/settings');
+    revalidatePath('/analytics/search');
+    return outcome.ok
+      ? { ok: true, message: 'Search Console sync completed.' }
+      : { ok: false, message: outcome.error ?? 'Sync failed.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function checkContentProvider(): Promise<
+  ActionResult & { reachable?: boolean | null; detail?: string }
+> {
+  try {
+    const outcome = await apiFetch<{
+      provider: string;
+      reachable: boolean | null;
+      detail: string;
+    }>('/v1/settings/content-provider/check', { method: 'POST', body: {} });
+    return { ok: true, reachable: outcome.reachable, detail: outcome.detail };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
 /* ----------------------------------------------------------- availability */
 
 export interface AvailabilityRulePayload {

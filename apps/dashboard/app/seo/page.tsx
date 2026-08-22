@@ -20,6 +20,7 @@ interface Audit {
   readonly checks: readonly {
     id: string;
     severity: 'critical' | 'warning' | 'notice';
+    category?: 'technical' | 'content' | 'answers';
     label: string;
     explanation: string;
     findings: readonly { path: string; title: string; detail: string }[];
@@ -103,6 +104,9 @@ export default async function SeoPage() {
                   <span className={`badge badge--${SEVERITY_BADGE[check.severity] ?? 'muted'}`}>
                     {check.severity}
                   </span>{' '}
+                  {check.category ? (
+                    <span className="badge badge--muted">{check.category}</span>
+                  ) : null}{' '}
                   <strong>{check.label}</strong>{' '}
                   <span className="muted">({check.findings.length})</span>
                 </summary>
