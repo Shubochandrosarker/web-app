@@ -4,6 +4,7 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
+import rateLimit from '@fastify/rate-limit';
 import { createDatabase, type Database } from '@bos/database';
 import { MODULE_REGISTRY, type ModuleId } from '@bos/business-types';
 import type { ApiConfig } from './lib/env.ts';
@@ -238,6 +239,15 @@ export function buildApp({
     allowedHeaders: ['content-type', 'authorization', 'x-bos-workspace', 'x-request-id'],
     maxAge: 86_400,
   });
+
+  /*
+   * Per-route only (`global: false`): the hot read paths must not pay a
+   * limiter, and the app-level Redis limiters (login, forms, invitations)
+   * stay the durable cross-instance enforcement. This layer is the
+   * framework-level backstop that routes performing expensive mutations
+   * opt into via `config.rateLimit`.
+   */
+  void app.register(rateLimit, { global: false });
 
   void app.register(cookie, { secret: config.AUTH_SESSION_SECRET });
 

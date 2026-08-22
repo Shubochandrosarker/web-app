@@ -107,7 +107,12 @@ export function registerMemberRoutes(
 
   app.post(
     '/v1/members/invite',
-    { config: { bosAccess: requirePermission('members.invite') } },
+    {
+      config: {
+        bosAccess: requirePermission('members.invite'),
+        rateLimit: { max: 30, timeWindow: '1 hour' },
+      },
+    },
     async (request, reply) => {
       const workspace = requireWorkspace(request);
       const actorId = requireUserId(request);
@@ -193,7 +198,12 @@ export function registerMemberRoutes(
 
   app.patch(
     '/v1/members/:userId',
-    { config: { bosAccess: requirePermission('members.manage') } },
+    {
+      config: {
+        bosAccess: requirePermission('members.manage'),
+        rateLimit: { max: 90, timeWindow: '1 hour' },
+      },
+    },
     async (request) => {
       const workspace = requireWorkspace(request);
       const actorId = requireUserId(request);
