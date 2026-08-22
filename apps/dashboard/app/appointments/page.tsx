@@ -42,6 +42,9 @@ export default async function AppointmentsPage({
             New appointment
           </a>
         ) : null}
+        <a className="button" href="/appointments/availability">
+          Availability
+        </a>
         <form className="toolbar" method="get">
           <label className="visually-hidden" htmlFor="appointment-status">
             Status

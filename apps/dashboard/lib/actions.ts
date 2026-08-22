@@ -1105,6 +1105,77 @@ export async function cancelAppointment(
   }
 }
 
+/* ----------------------------------------------------------- availability */
+
+export interface AvailabilityRulePayload {
+  readonly staffProfileId: string | null;
+  readonly locationId: string | null;
+  readonly serviceId: string | null;
+  readonly weekday: number;
+  readonly startMinute: number;
+  readonly endMinute: number;
+  readonly slotMinutes: number;
+  readonly capacity: number;
+}
+
+export async function createAvailabilityRule(
+  input: AvailabilityRulePayload,
+): Promise<ActionResult> {
+  try {
+    await apiFetch('/v1/availability/rules', {
+      method: 'POST',
+      body: {
+        ...input,
+        staffProfileId: input.staffProfileId?.trim() || null,
+        locationId: input.locationId?.trim() || null,
+        serviceId: input.serviceId?.trim() || null,
+      },
+    });
+    revalidatePath('/appointments/availability');
+    return { ok: true, message: 'Availability rule added.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function deleteAvailabilityRule(ruleId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/availability/rules/${ruleId}`, { method: 'DELETE' });
+    revalidatePath('/appointments/availability');
+    return { ok: true, message: 'Rule removed.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function createAvailabilityException(input: {
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly isAvailable: boolean;
+  readonly reason: string | null;
+}): Promise<ActionResult> {
+  try {
+    await apiFetch('/v1/availability/exceptions', {
+      method: 'POST',
+      body: { ...input, reason: input.reason?.trim() || null },
+    });
+    revalidatePath('/appointments/availability');
+    return { ok: true, message: input.isAvailable ? 'Extra hours added.' : 'Blackout added.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
+export async function deleteAvailabilityException(exceptionId: string): Promise<ActionResult> {
+  try {
+    await apiFetch(`/v1/availability/exceptions/${exceptionId}`, { method: 'DELETE' });
+    revalidatePath('/appointments/availability');
+    return { ok: true, message: 'Exception removed.' };
+  } catch (error) {
+    return { ok: false, message: describe(error) };
+  }
+}
+
 /* ----------------------------------------------------------------- orders */
 
 export interface OrderItemPayload {

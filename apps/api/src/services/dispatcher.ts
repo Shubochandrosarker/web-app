@@ -33,6 +33,11 @@ export interface DispatcherOptions {
    * and a second polling loop would double the idle query load for nothing.
    */
   readonly resumeAutomations?: () => Promise<number>;
+  /**
+   * Turns due appointment-reminder rows into outbox events, under the same
+   * lease and for the same reason as `resumeAutomations`.
+   */
+  readonly dispatchReminders?: () => Promise<number>;
   /** How often to look for work. */
   readonly intervalMs?: number;
   readonly batchSize?: number;
@@ -78,6 +83,14 @@ export function createDispatcher(options: DispatcherOptions): Dispatcher {
           return 0;
         });
         if (resumed > 0) options.logger.info({ resumed }, 'Automation runs resumed');
+      }
+
+      if (options.dispatchReminders) {
+        const reminders = await options.dispatchReminders().catch((error: unknown) => {
+          options.logger.error({ err: error }, 'Reminder dispatch pass failed');
+          return 0;
+        });
+        if (reminders > 0) options.logger.info({ reminders }, 'Appointment reminders dispatched');
       }
 
       if (result.claimed > 0) {

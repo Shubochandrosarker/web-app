@@ -46,6 +46,7 @@ import {
 import { createScanner, type DocumentScanner } from './providers/scanner.ts';
 import { createStorage } from './providers/storage.ts';
 import { createDispatcher, type Dispatcher } from './services/dispatcher.ts';
+import { dispatchDueReminders } from './services/scheduling.ts';
 import { createLeadService } from './services/leads.ts';
 import { createNotificationDispatcher } from './services/notifications.ts';
 
@@ -420,6 +421,7 @@ export function buildApp({
     logger: app.log,
     handler: createOutboxHandler(context, internalDependencies, automationEngine),
     resumeAutomations: () => automationEngine.resumeDueRuns(),
+    dispatchReminders: () => dispatchDueReminders(db),
   });
 
   for (const warning of warnings) app.log.warn({ warning }, 'Configuration warning');
